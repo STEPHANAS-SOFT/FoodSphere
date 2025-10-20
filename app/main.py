@@ -11,8 +11,8 @@ models.Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Hospital Management System API",
-    description="REST API for Hospital Management System",
+    title="FoodSphere",
+    description="FoodSphere delivery App",
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
