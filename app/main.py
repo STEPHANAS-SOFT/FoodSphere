@@ -4,6 +4,8 @@ import uvicorn
 from contextlib import asynccontextmanager
 from .shared.database import engine
 from . import models
+from . import routes as user
+from . import routes as vendor
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -60,3 +62,7 @@ def run():
 # Automatically run when executed directly
 if __name__ == "__main__":
     run()
+
+
+app.include_router(user.user_router)
+app.include_router(vendor.vendor_router)
