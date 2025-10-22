@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     secret_key: str
     algorithm: str
     access_token_expire_minutes: int
+    api_key: str
 
 
     backend_host: str = "localhost"
@@ -21,6 +22,14 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+
+    
+    class Settings(BaseSettings):
+        api_prefix: str = "/api/v1"
+        api_key: str  # will load from .env
+        class Config:
+            env_file = ".env"
+
 
     @property
     def db_url(self):
@@ -33,6 +42,8 @@ class Settings(BaseSettings):
     def api_prefix(self) -> str:
         # Always just the relative path for FastAPI
         return "/api"
+    
+
 
     @property
     def api_base_url(self) -> str:

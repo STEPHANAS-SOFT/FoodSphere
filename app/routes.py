@@ -5,6 +5,7 @@ from .shared import database
 from .shared.config import settings
 from uuid import UUID
 from . import schemas
+from .shared.api_key_route import verify_api_key
 # from .schemas import schemas
 from .services.commands import (
     CreateUserCommand, CreateUserHandler,
@@ -20,7 +21,7 @@ from .services.queries import (
 # =================================================================================================================
 #                                            USERS ROUTES
 # =================================================================================================================
-user_router = APIRouter(prefix=f"{settings.api_prefix}/user", tags=["User"])
+user_router = APIRouter(prefix=f"{settings.api_prefix}/user", tags=["User"], dependencies=[Depends(verify_api_key)])
 
 
 # ==========================
@@ -80,7 +81,7 @@ def get_user(
 # =================================================================================================================
 #                                            VENDOR ROUTES
 # =================================================================================================================
-vendor_router = APIRouter(prefix=f"{settings.api_prefix}/vendor", tags=["Vendor"])
+vendor_router = APIRouter(prefix=f"{settings.api_prefix}/vendor", tags=["Vendor"], dependencies=[Depends(verify_api_key)])
 
 # ==========================
 # CREATE VENDORS
