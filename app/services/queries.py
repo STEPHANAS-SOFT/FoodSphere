@@ -68,3 +68,19 @@ class GetAllVendorQueryHandler:
         if not all_vendors:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
         return all_vendors
+
+
+
+@dataclass
+class GetVendorByIdQuery:
+    vendor_id: UUID
+
+class GetVendorByIdQueryHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, query: GetVendorByIdQuery):
+        vendor = self.db.query(Vendor).filter(Vendor.id == query.vendor_id).first()
+        if not vendor:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor with ID {0} not found".format(query.vendor_id))
+        return vendor
