@@ -15,13 +15,17 @@ from .services.queries import (
     GetAllUserQuery, GetAllUserQueryHandler, GetAllVendorQuery,
     GetUserByIdQuery, GetUserByIdQueryHandler,
     GetAllVendorQuery, GetAllVendorQueryHandler,
+    GetVendorByIdQuery, GetVendorByIdQueryHandler
 )
 
 
 # =================================================================================================================
 #                                            USERS ROUTES
 # =================================================================================================================
-user_router = APIRouter(prefix=f"{settings.api_prefix}/user", tags=["User"], dependencies=[Depends(verify_api_key)])
+user_router = APIRouter(
+    prefix=f"{settings.api_prefix}/user", 
+    tags=["User"], 
+    dependencies=[Depends(verify_api_key)])
 
 
 # ==========================
@@ -78,6 +82,8 @@ def get_user(
 
 
 
+
+
 # =================================================================================================================
 #                                            VENDOR ROUTES
 # =================================================================================================================
@@ -123,4 +129,19 @@ def get_all_vendors(
 ):
     query = GetAllVendorQuery()
     handler = GetAllVendorQueryHandler(db)
+    return handler.handle(query)
+
+
+
+# ==========================
+# GET VENDOR BY ID
+# ==========================
+@vendor_router.get("/{vendor_id}", response_model=schemas.VendorResponse)
+def get_vendor(
+    vendor_id: int,
+    db: Session = Depends(database.get_db),
+    # current_user=Depends(oauth2.role_required(["admin"])),
+):
+    query = GetVendorByIdQuery(vendor_id=vendor_id)
+    handler = GetVendorByIdQueryHandler(db)
     return handler.handle(query)
