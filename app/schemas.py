@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, HttpUrl
 from enum import Enum
 
 
@@ -16,7 +16,6 @@ class UserBase(BaseModel):
     fcm_token: Optional[str] 
     latitude: Optional[float] 
     longitude: Optional[float] 
-
 
 
 class UserCreate(UserBase):
@@ -39,8 +38,53 @@ class UserResponse(UserBase):
     updated_at: Optional[datetime] = None
 
     class Config:
-        orm_mode = True 
-        from_attributes = True  
+        orm_mode = True
+
+
+# ====================================================
+# ITEM SCHEMAS
+# ====================================================
+
+class ItemBase(BaseModel):
+    name: str
+    base_price: float
+    description: Optional[str]
+    image_url: Optional[HttpUrl]
+    is_available: Optional[bool]
+    allows_addons: Optional[bool]
+    vendor_id: int
+    # category_id: int
+
+
+    class Config:
+        orm_mode = True
+
+class ItemCreate(ItemBase):
+    pass
+
+    class Config:
+        orm_mode = True
+
+class ItemUpdate(BaseModel):
+    name: Optional[str]
+    description: Optional[str]
+    base_price: Optional[float]
+    image_url: Optional[HttpUrl]
+    is_available: Optional[bool]
+    allows_addons: Optional[bool]
+    # category_id: Optional[int]
+
+    class Config:
+        orm_mode = True
+
+class ItemResponse(ItemBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        orm_mode = True
+
 
 
 # ====================================================
@@ -99,6 +143,10 @@ class VendorResponse(VendorBase):
     id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    items: Optional[List[ItemResponse]]
 
     class Config:
         orm_mode = True
+
+
+

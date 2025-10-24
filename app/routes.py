@@ -9,13 +9,24 @@ from .shared.api_key_route import verify_api_key
 # from .schemas import schemas
 from .services.commands import (
     CreateUserCommand, CreateUserHandler,
-    CreateVendorCommand, CreateVendorHandler
+    DeleteUserCommand, DeleteUserHandler,
+    UpdateUserCommand, UpdateUserHandler,
+    CreateVendorCommand, CreateVendorHandler,
+    DeleteVendorCommand, DeleteVendorHandler,
+    UpdateVendorCommand, UpdateVendorHandler,
+    CreateItemCommand, CreateItemHandler,
+    DeleteItemCommand, DeleteItemHandler,
+    UpdateItemCommand, UpdateItemHandler
 )
 from .services.queries import (
     GetAllUserQuery, GetAllUserQueryHandler, GetAllVendorQuery,
     GetUserByIdQuery, GetUserByIdQueryHandler,
     GetAllVendorQuery, GetAllVendorQueryHandler,
-    GetVendorByIdQuery, GetVendorByIdQueryHandler
+    GetVendorByIdQuery, GetVendorByIdQueryHandler,
+    GetAllItemQuery, GetAllItemQueryHandler,
+    GetItemByIdQuery, GetItemByIdQueryHandler,
+    GetItemByNameQuery, GetItemByNameQueryHandler,
+    GetVendorByNameQuery, GetVendorByNameQueryHandler
 )
 
 
@@ -83,6 +94,46 @@ def get_user(
 
 
 
+# ==========================
+# DELETE USER BY ID
+# ==========================
+@user_router.delete("/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(database.get_db),
+):
+    command = DeleteUserCommand(user_id=user_id)
+    handler = DeleteUserHandler(db)
+    return handler.handle(command)
+
+
+
+
+# ==========================
+# UPDATE USER BY ID
+# ==========================
+@user_router.put("/{user_id}", response_model=schemas.UserResponse)
+def update_user(
+    user_id: int,
+    user: schemas.UserUpdate,
+    db: Session = Depends(database.get_db),
+    # current_user=Depends(oauth2.role_required([]))
+):
+    command = UpdateUserCommand(
+        user_id=user_id,
+        firebase_uid=user.firebase_uid,
+        email=user.email,
+        phone_number=user.phone_number,
+        full_name=user.full_name,
+        fcm_token=user.fcm_token,
+        latitude=user.latitude,
+        longitude=user.longitude
+    )
+    handler = UpdateUserHandler(db)
+    return handler.handle(command)
+
+
+
 
 # =================================================================================================================
 #                                            VENDOR ROUTES
@@ -145,3 +196,183 @@ def get_vendor(
     query = GetVendorByIdQuery(vendor_id=vendor_id)
     handler = GetVendorByIdQueryHandler(db)
     return handler.handle(query)
+
+
+
+# ==========================
+# GET VENDOR BY NAME
+# ==========================
+@vendor_router.get("/name/{name}", response_model=list[schemas.VendorResponse])
+def get_vendor_by_name(
+    name: str,
+    db: Session = Depends(database.get_db),
+    # current_user=Depends(oauth2.role_required(["admin"])),
+):
+    query = GetVendorByNameQuery(name=name)
+    handler = GetItemByNameQueryHandler(db)
+    return handler.handle(query)
+
+
+
+# ==========================
+# DELETE VENDOR BY ID
+# ==========================
+@vendor_router.delete("/{vendor_id}")
+def delete_vendor(
+    vendor_id: int,
+    db: Session = Depends(database.get_db), 
+                    #  current_user=Depends(oauth2.role_required([]))
+    ):
+    command = DeleteVendorCommand(vendor_id=vendor_id)
+    handler = DeleteVendorHandler(db)
+    return handler.handle(command)
+
+
+
+
+# ==========================
+# UPDATE VENDOR BY ID
+# ==========================
+@vendor_router.put("/{vendor_id}", response_model=schemas.VendorResponse)
+def update_vendor(
+    vendor_id: int, 
+    vendor: schemas.VendorCreate, 
+    db: Session = Depends(database.get_db), 
+                # current_user=Depends(oauth2.role_required([]))
+):
+    command = UpdateVendorCommand(vendor_id=vendor_id,
+                                name=vendor.name,
+                                vendor_type=vendor.vendor_type,
+                                email=vendor.email,
+                                phone_number=vendor.phone_number,
+                                address=vendor.address,
+                                latitude=vendor.latitude,
+                                longitude=vendor.longitude,
+                                description=vendor.description,
+                                logo_url=vendor.logo_url,
+                                has_own_delivery=vendor.has_own_delivery,
+                                is_active=vendor.is_active,
+                                fcm_token=vendor.fcm_token,
+                                opening_time=vendor.opening_time,
+                                closing_time=vendor.closing_time
+                                )
+    
+    handler = UpdateVendorHandler(db)
+    return handler.handle(command)
+
+
+
+
+
+# =================================================================================================================
+#                                            ITEM ROUTES
+# =================================================================================================================
+item_router = APIRouter(prefix=f"{settings.api_prefix}/item", tags=["Item"], dependencies=[Depends(verify_api_key)])
+
+# ==========================
+# CREATE ITEM
+# ==========================
+@item_router.post("/", response_model=schemas.ItemResponse)
+def create_item(
+    item: schemas.ItemCreate,
+    db: Session = Depends(database.get_db),
+    # current_user=Depends(oauth2.role_required(["admin"])),
+):
+    command = CreateItemCommand(
+        name=item.name,
+        description=item.description,
+        base_price=item.base_price,
+        image_url=item.image_url,
+        is_available=item.is_available,
+        allows_addons=item.allows_addons
+    )
+
+    handler = CreateItemHandler(db)
+    return handler.handle(command)
+
+
+# ==========================
+# GET ALL ITEMS
+# ==========================
+@item_router.get("/", response_model=List[schemas.ItemResponse])
+def get_all_items(
+    db: Session = Depends(database.get_db),
+    # current_user=Depends(oauth2.role_required(["admin"])),
+):
+    query = GetAllItemQuery()
+    handler = GetAllItemQueryHandler(db)
+    return handler.handle(query)
+
+
+
+# ==========================
+# GET ITEM BY NAME
+# ==========================
+@item_router.get("/name/{name}", response_model=list[schemas.ItemResponse])
+def get_item_by_name(
+    name: str,
+    db: Session = Depends(database.get_db),
+    # current_user=Depends(oauth2.role_required(["admin"])),
+):
+    query = GetItemByNameQuery(name=name)
+    handler = GetItemByNameQueryHandler(db)
+    return handler.handle(query)
+
+
+
+# ==========================
+# GET ITEMS BY ID
+# ==========================
+@item_router.get("/{item_id}", response_model=schemas.ItemResponse)
+def get_item(
+    item_id: int,
+    db: Session = Depends(database.get_db),
+    # current_user=Depends(oauth2.role_required(["admin"])),
+):
+    query = GetItemByIdQuery(item_id=item_id)
+    handler = GetItemByIdQueryHandler(db)
+    return handler.handle(query)
+
+
+
+
+
+# ==========================
+# DELETE ITEMS BY ID
+# ==========================
+@item_router.delete("/{item_id}")
+def delete_item(
+    item_id: int,
+    db: Session = Depends(database.get_db),
+    # current_user=Depends(oauth2.role_required([]))
+):
+    command = DeleteItemCommand(item_id=item_id)
+    handler = DeleteItemHandler(db)
+    return handler.handle(command)
+
+
+
+
+
+# ==========================
+# UPDATE ITEM BY ID
+# ==========================
+@item_router.put("/{item_id}", response_model=schemas.ItemResponse)
+def update_item(
+    item_id: int,
+    item: schemas.ItemUpdate,
+    db: Session = Depends(database.get_db),
+    # current_user=Depends(oauth2.role_required([]))
+):
+    command = UpdateItemCommand(
+        item_id=item_id,
+        name=item.name,
+        description=item.description,
+        base_price=item.base_price,
+        image_url=item.image_url,
+        is_available=item.is_available,
+        allows_addons=item.allows_addons
+    )
+    handler = UpdateItemHandler(db)
+    return handler.handle(command)
+
