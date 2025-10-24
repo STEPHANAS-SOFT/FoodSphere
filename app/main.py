@@ -6,6 +6,7 @@ from .shared.database import engine
 from . import models
 from . import routes as user
 from . import routes as vendor
+from . import routes as item
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -66,3 +67,4 @@ if __name__ == "__main__":
 
 app.include_router(user.user_router)
 app.include_router(vendor.vendor_router)
+app.include_router(item.item_router)
