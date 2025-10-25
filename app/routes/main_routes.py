@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from .shared import database
-from .shared.config import settings
+from ..shared import database
+from ..shared.config import settings
 from uuid import UUID
-from . import schemas
-from .shared.api_key_route import verify_api_key
+from .. import schemas
+from ..shared.api_key_route import verify_api_key
 # from .schemas import schemas
-from .services.commands import (
+from ..services.commands import (
     CreateUserCommand, CreateUserHandler,
     DeleteUserCommand, DeleteUserHandler,
     UpdateUserCommand, UpdateUserHandler,
@@ -18,7 +18,7 @@ from .services.commands import (
     DeleteItemCommand, DeleteItemHandler,
     UpdateItemCommand, UpdateItemHandler
 )
-from .services.queries import (
+from ..services.queries import (
     GetAllUserQuery, GetAllUserQueryHandler, GetAllVendorQuery,
     GetUserByIdQuery, GetUserByIdQueryHandler,
     GetAllVendorQuery, GetAllVendorQueryHandler,
@@ -209,7 +209,7 @@ def get_vendor_by_name(
     # current_user=Depends(oauth2.role_required(["admin"])),
 ):
     query = GetVendorByNameQuery(name=name)
-    handler = GetItemByNameQueryHandler(db)
+    handler = GetVendorByNameQueryHandler(db)
     return handler.handle(query)
 
 
@@ -280,8 +280,10 @@ def create_item(
 ):
     command = CreateItemCommand(
         name=item.name,
+        base_price=item.base_price,     
+        vendor_id=item.vendor_id,
+        category_id=item.category_id,
         description=item.description,
-        base_price=item.base_price,
         image_url=item.image_url,
         is_available=item.is_available,
         allows_addons=item.allows_addons
@@ -369,6 +371,7 @@ def update_item(
         name=item.name,
         description=item.description,
         base_price=item.base_price,
+        category_id=item.category_id,
         image_url=item.image_url,
         is_available=item.is_available,
         allows_addons=item.allows_addons

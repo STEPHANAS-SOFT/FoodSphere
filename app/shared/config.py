@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     @property
     def db_url(self):
         return (
-            f"postgresql://{self.database_username}:{self.database_password}@{self.database_hostname}:{self.database_port}/{self.database_name}"
+            f"postgresql+psycopg2://{self.database_username}:{self.database_password}@{self.database_hostname}:{self.database_port}/{self.database_name}"
         )
 
     # api_prefix: str = "/api"

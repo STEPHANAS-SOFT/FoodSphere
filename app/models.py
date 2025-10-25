@@ -37,6 +37,30 @@ class RiderStatus(enum.Enum):
     BUSY = "busy"               # Rider is currently on a delivery
     OFFLINE = "offline"         # Rider is not accepting deliveries
 
+class WalletTransactionType(enum.Enum):
+    """
+    Enumeration for different types of wallet transactions.
+    Used to categorize all wallet-related financial activities.
+    """
+    DEPOSIT = "deposit"          # Money added to wallet (funding)
+    WITHDRAWAL = "withdrawal"    # Money removed from wallet
+    PAYMENT = "payment"          # Payment for services (orders, delivery)
+    REFUND = "refund"           # Money refunded to wallet
+    TRANSFER = "transfer"        # Money transferred between wallets
+    COMMISSION = "commission"    # Platform commission earned
+    BONUS = "bonus"             # Promotional bonus or reward
+
+class WalletTransactionStatus(enum.Enum):
+    """
+    Enumeration for transaction processing status.
+    Tracks the lifecycle of wallet transactions.
+    """
+    PENDING = "pending"          # Transaction initiated but not processed
+    COMPLETED = "completed"      # Transaction successfully processed
+    FAILED = "failed"           # Transaction failed to process
+    CANCELLED = "cancelled"      # Transaction was cancelled
+    REFUNDED = "refunded"       # Transaction was refunded
+
 class User(Base):
     """
     Represents end-users (customers) of the food delivery system.
@@ -65,6 +89,7 @@ class User(Base):
     # Relationships
     orders = relationship("Order", back_populates="user")
     addresses = relationship("DeliveryAddress", back_populates="user")
+    wallet = relationship("UserWallet", back_populates="user", uselist=False)
 
 class Vendor(Base):
     """
@@ -109,6 +134,7 @@ class Vendor(Base):
     # Relationships
     items = relationship("Item", back_populates="vendor")
     orders = relationship("Order", back_populates="vendor")
+    wallet = relationship("VendorWallet", back_populates="vendor", uselist=False)
 
 class ItemCategory(Base):
     """
@@ -125,7 +151,7 @@ class ItemCategory(Base):
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
 
     # Relationships
-    items = relationship("Item", back_populates="category")
+    items = relationship("Item", back_populates="category", cascade="all, delete-orphan")
 
 class Item(Base):
     """
@@ -165,7 +191,6 @@ class Item(Base):
     vendor = relationship("Vendor", back_populates="items")
     category = relationship("ItemCategory", back_populates="items")
     order_items = relationship("OrderItem", back_populates="item")
-    addon_groups = relationship("ItemAddonGroup", back_populates="item")
     variations = relationship("ItemVariation", back_populates="item")
 
 class DeliveryAddress(Base):
@@ -248,6 +273,7 @@ class Rider(Base):
 
     # Relationships
     orders = relationship("Order", back_populates="rider")
+    wallet = relationship("RiderWallet", back_populates="rider", uselist=False)
 
 class Order(Base):
     """
@@ -332,7 +358,6 @@ class ItemAddonGroup(Base):
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
 
     # Relationships
-    item = relationship("Item", back_populates="addon_groups")
     addons = relationship("ItemAddon", back_populates="group")
 
 class ItemAddon(Base):
@@ -623,3 +648,197 @@ class CartItemAddon(Base):
     addon = relationship("ItemAddon")
 
 
+class UserWallet(Base):
+    """
+    Represents a user's wallet for managing their funds.
+    
+    This model manages user financial transactions and balance:
+    - Stores current wallet balance
+    - Tracks wallet status and security
+    - Manages payment methods and funding sources
+    - Handles transaction limits and controls
+    
+    Features:
+    - Real-time balance tracking
+    - Transaction history integration
+    - Security measures (PIN, limits)
+    - Multiple funding source support
+    - Automatic balance updates
+    
+    Used for:
+    - Paying for orders and services
+    - Receiving refunds
+    - Managing personal funds
+    - Transaction history tracking
+    """
+    __tablename__ = "user_wallets"
+
+    id = Column(Integer, primary_key=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    balance = Column(Float, nullable=False, default=0.0)  # Current wallet balance
+    is_active = Column(Boolean, default=True)            # Wallet active status
+    is_locked = Column(Boolean, default=False)           # Security lock status
+    daily_limit = Column(Float, default=50000.0)        # Daily spending limit
+    transaction_pin = Column(String)                     # Encrypted transaction PIN
+    last_transaction_at = Column(TIMESTAMP(timezone=True))
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
+    updated_at = Column(TIMESTAMP(timezone=True), onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="wallet")
+    transactions = relationship("WalletTransaction", back_populates="user_wallet", 
+                              foreign_keys="WalletTransaction.user_wallet_id")
+
+
+class VendorWallet(Base):
+    """
+    Represents a vendor's wallet for business transactions.
+    
+    This model manages vendor business funds and earnings:
+    - Tracks earnings from orders
+    - Manages commission payments
+    - Handles withdrawal requests
+    - Stores business transaction history
+    
+    Features:
+    - Revenue tracking and analytics
+    - Commission management
+    - Withdrawal processing
+    - Business expense tracking
+    - Financial reporting support
+    
+    Used for:
+    - Receiving payments from orders
+    - Paying platform commissions
+    - Managing business expenses
+    - Withdrawing earnings to bank accounts
+    """
+    __tablename__ = "vendor_wallets"
+
+    id = Column(Integer, primary_key=True, nullable=False)
+    vendor_id = Column(Integer, ForeignKey("vendors.id", ondelete="CASCADE"), unique=True, nullable=False)
+    balance = Column(Float, nullable=False, default=0.0)     # Current wallet balance
+    pending_balance = Column(Float, nullable=False, default=0.0)  # Pending settlement amount
+    is_active = Column(Boolean, default=True)               # Wallet active status
+    is_locked = Column(Boolean, default=False)              # Security lock status
+    commission_rate = Column(Float, default=0.15)           # Platform commission rate (15%)
+    minimum_withdrawal = Column(Float, default=1000.0)      # Minimum withdrawal amount
+    last_transaction_at = Column(TIMESTAMP(timezone=True))
+    last_settlement_at = Column(TIMESTAMP(timezone=True))   # Last earnings settlement
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
+    updated_at = Column(TIMESTAMP(timezone=True), onupdate=datetime.utcnow)
+
+    # Relationships
+    vendor = relationship("Vendor", back_populates="wallet")
+    transactions = relationship("WalletTransaction", back_populates="vendor_wallet",
+                              foreign_keys="WalletTransaction.vendor_wallet_id")
+
+
+class RiderWallet(Base):
+    """
+    Represents a rider's wallet for delivery earnings.
+    
+    This model manages rider earnings and delivery payments:
+    - Tracks delivery fees earned
+    - Manages tips and bonuses
+    - Handles fuel and expense reimbursements
+    - Stores delivery transaction history
+    
+    Features:
+    - Delivery earnings tracking
+    - Tips and bonus management
+    - Expense reimbursement
+    - Performance-based rewards
+    - Real-time earning updates
+    
+    Used for:
+    - Receiving delivery fees
+    - Getting tips from customers
+    - Expense reimbursements
+    - Performance bonuses
+    - Withdrawing earnings
+    """
+    __tablename__ = "rider_wallets"
+
+    id = Column(Integer, primary_key=True, nullable=False)
+    rider_id = Column(Integer, ForeignKey("riders.id", ondelete="CASCADE"), unique=True, nullable=False)
+    balance = Column(Float, nullable=False, default=0.0)     # Current wallet balance
+    pending_balance = Column(Float, nullable=False, default=0.0)  # Pending delivery payments
+    is_active = Column(Boolean, default=True)               # Wallet active status
+    is_locked = Column(Boolean, default=False)              # Security lock status
+    delivery_rate = Column(Float, default=500.0)            # Base delivery fee rate
+    minimum_withdrawal = Column(Float, default=500.0)       # Minimum withdrawal amount
+    last_transaction_at = Column(TIMESTAMP(timezone=True))
+    last_settlement_at = Column(TIMESTAMP(timezone=True))   # Last earnings settlement
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
+    updated_at = Column(TIMESTAMP(timezone=True), onupdate=datetime.utcnow)
+
+    # Relationships
+    rider = relationship("Rider", back_populates="wallet")
+    transactions = relationship("WalletTransaction", back_populates="rider_wallet",
+                              foreign_keys="WalletTransaction.rider_wallet_id")
+
+
+class WalletTransaction(Base):
+    """
+    Represents individual wallet transactions for all user types.
+    
+    This model tracks all financial transactions across the platform:
+    - Records all wallet activities (deposits, payments, withdrawals)
+    - Maintains transaction history and audit trail
+    - Links transactions to related entities (orders, refunds, etc.)
+    - Provides transaction status tracking
+    
+    Features:
+    - Comprehensive transaction logging
+    - Multi-wallet support (user, vendor, rider)
+    - Transaction status tracking
+    - Reference linking to related entities
+    - Audit trail for financial compliance
+    
+    Transaction Types:
+    1. User transactions: Order payments, wallet funding, refunds
+    2. Vendor transactions: Order earnings, commission payments, withdrawals
+    3. Rider transactions: Delivery earnings, tips, expense reimbursements
+    """
+    __tablename__ = "wallet_transactions"
+
+    id = Column(Integer, primary_key=True, nullable=False)
+    
+    # Wallet References (only one should be set per transaction)
+    user_wallet_id = Column(Integer, ForeignKey("user_wallets.id", ondelete="CASCADE"))
+    vendor_wallet_id = Column(Integer, ForeignKey("vendor_wallets.id", ondelete="CASCADE"))
+    rider_wallet_id = Column(Integer, ForeignKey("rider_wallets.id", ondelete="CASCADE"))
+    
+    # Transaction Details
+    transaction_type = Column(Enum(WalletTransactionType), nullable=False)
+    status = Column(Enum(WalletTransactionStatus), default=WalletTransactionStatus.PENDING)
+    amount = Column(Float, nullable=False)               # Transaction amount
+    balance_before = Column(Float, nullable=False)       # Balance before transaction
+    balance_after = Column(Float, nullable=False)        # Balance after transaction
+    
+    # Transaction Metadata
+    description = Column(String, nullable=False)         # Human-readable description
+    reference_id = Column(String)                        # External reference (order ID, etc.)
+    reference_type = Column(String)                      # Type of reference (order, deposit, etc.)
+    
+    # Processing Information
+    processed_at = Column(TIMESTAMP(timezone=True))      # When transaction was processed
+    processor_id = Column(String)                        # Payment processor transaction ID
+    
+    # Audit Fields
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
+    updated_at = Column(TIMESTAMP(timezone=True), onupdate=datetime.utcnow)
+
+    # Relationships
+    user_wallet = relationship("UserWallet", back_populates="transactions",
+                             foreign_keys=[user_wallet_id])
+    vendor_wallet = relationship("VendorWallet", back_populates="transactions",
+                               foreign_keys=[vendor_wallet_id])
+    rider_wallet = relationship("RiderWallet", back_populates="transactions",
+                              foreign_keys=[rider_wallet_id])
+
+
+# Configure relationships after all models are defined
+Item.addon_groups = relationship("ItemAddonGroup", back_populates="item")
+ItemAddonGroup.item = relationship("Item", back_populates="addon_groups")

@@ -2,7 +2,13 @@ from fastapi import HTTPException, status
 from datetime import datetime
 from pydantic import EmailStr, HttpUrl
 from sqlalchemy.orm import Session
-from ..models import User, Vendor, VendorType, Item
+from ..models import (
+    User, Vendor, VendorType, Item, ItemCategory, DeliveryAddress, 
+    Rider, RiderStatus, Order, OrderStatus, ItemAddonGroup, ItemAddon, 
+    ItemVariation, OrderItem, OrderItemAddon, OrderTracking, 
+    Cart, CartItem, CartItemAddon, UserWallet, VendorWallet, 
+    RiderWallet, WalletTransaction, WalletTransactionType, WalletTransactionStatus
+)
 from dataclasses import dataclass
 from typing import Optional, List
 
@@ -44,6 +50,10 @@ class CreateUserHandler:
         self.db.add(user)
         self.db.commit() 
         self.db.refresh(user)
+        
+        # Automatically create user wallet
+        create_user_wallet(self.db, user.id)
+        
         return user
     
 
@@ -173,6 +183,10 @@ class CreateVendorHandler:
             self.db.add(vendor)
             self.db.commit() 
             self.db.refresh(vendor)
+            
+            # Automatically create vendor wallet
+            create_vendor_wallet(self.db, vendor.id)
+            
             return vendor
         
 
@@ -270,12 +284,13 @@ class DeleteVendorHandler:
 class CreateItemCommand:
     name: str
     base_price: float
+    vendor_id: int
+    category_id: int
     description: Optional[str] = None
-    image_url: Optional[HttpUrl] = None
+    image_url: Optional[str] = None
     is_available: Optional[bool] = True
     allows_addons: Optional[bool] = False
-    # category_id: int
-    # vendor_id: int
+    
 
 
 class CreateItemHandler:
@@ -292,8 +307,8 @@ class CreateItemHandler:
                 image_url=command.image_url,
                 is_available=command.is_available,
                 allows_addons=command.allows_addons,
-                # category_id=command.category_id,
-                # vendor_id=command.vendor_id,
+                category_id=command.category_id,
+                vendor_id=command.vendor_id,
             )
 
             self.db.add(item)
@@ -311,12 +326,13 @@ class CreateItemHandler:
 @dataclass(frozen=True)
 class UpdateItemCommand:
     item_id: int
-    name: str
-    base_price: float
+    name: Optional[str] = None
+    base_price: Optional[float] = None
+    category_id: Optional[int] = None
     description: Optional[str] = None
-    image_url: Optional[HttpUrl] = None
-    is_available: Optional[bool] = True
-    allows_addons: Optional[bool] = False
+    image_url: Optional[str] = None
+    is_available: Optional[bool] = None
+    allows_addons: Optional[bool] = None
 
 
 class UpdateItemHandler:
@@ -329,14 +345,23 @@ class UpdateItemHandler:
         if not item:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Item with ID: {command.item_id} not found")
 
-        item_query.update({
-            Item.name: command.name,
-            Item.description: command.description,
-            Item.base_price: command.base_price,
-            Item.image_url: command.image_url,
-            Item.is_available: command.is_available,
-            Item.allows_addons: command.allows_addons,
-        })
+        update_data = {}
+        if command.name is not None:
+            update_data[Item.name] = command.name
+        if command.base_price is not None:
+            update_data[Item.base_price] = command.base_price
+        if command.category_id is not None:
+            update_data[Item.category_id] = command.category_id
+        if command.description is not None:
+            update_data[Item.description] = command.description
+        if command.image_url is not None:
+            update_data[Item.image_url] = command.image_url
+        if command.is_available is not None:
+            update_data[Item.is_available] = command.is_available
+        if command.allows_addons is not None:
+            update_data[Item.allows_addons] = command.allows_addons
+        
+        item_query.update(update_data)
         self.db.commit()
         return item_query.first()
 
@@ -363,3 +388,1347 @@ class DeleteItemHandler:
         self.db.delete(item)
         self.db.commit()
         return {"msg": f"Item with id: {command.item_id} deleted successfully"}
+
+
+# =============================================================================================================
+# ITEM CATEGORY COMMANDS
+# =============================================================================================================
+
+@dataclass
+class CreateItemCategoryCommand:
+    name: str
+    description: Optional[str] = None
+
+class CreateItemCategoryHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateItemCategoryCommand):
+        category = ItemCategory(
+            name=command.name,
+            description=command.description
+        )
+        self.db.add(category)
+        self.db.commit()
+        self.db.refresh(category)
+        return category
+
+@dataclass(frozen=True)
+class UpdateItemCategoryCommand:
+    category_id: int
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class UpdateItemCategoryHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: UpdateItemCategoryCommand):
+        category_query = self.db.query(ItemCategory).filter(ItemCategory.id == command.category_id)
+        category = category_query.first()
+        if not category:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Category with ID: {command.category_id} not found")
+
+        update_data = {}
+        if command.name is not None:
+            update_data[ItemCategory.name] = command.name
+        if command.description is not None:
+            update_data[ItemCategory.description] = command.description
+        
+        category_query.update(update_data)
+        self.db.commit()
+        return category_query.first()
+
+@dataclass(frozen=True)
+class DeleteItemCategoryCommand:
+    category_id: int
+
+class DeleteItemCategoryHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteItemCategoryCommand):
+        category = self.db.query(ItemCategory).filter(ItemCategory.id == command.category_id).first()
+        if not category:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Category with ID: {command.category_id} not found")
+
+        self.db.delete(category)
+        self.db.commit()
+        return {"msg": f"Category with id: {command.category_id} deleted successfully"}
+
+
+# =============================================================================================================
+# DELIVERY ADDRESS COMMANDS
+# =============================================================================================================
+
+@dataclass
+class CreateDeliveryAddressCommand:
+    user_id: int
+    address: str
+    latitude: float
+    longitude: float
+    is_default: Optional[bool] = False
+
+class CreateDeliveryAddressHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateDeliveryAddressCommand):
+        delivery_address = DeliveryAddress(
+            user_id=command.user_id,
+            address=command.address,
+            latitude=command.latitude,
+            longitude=command.longitude,
+            is_default=command.is_default
+        )
+        self.db.add(delivery_address)
+        self.db.commit()
+        self.db.refresh(delivery_address)
+        return delivery_address
+
+@dataclass(frozen=True)
+class UpdateDeliveryAddressCommand:
+    address_id: int
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    is_default: Optional[bool] = None
+
+class UpdateDeliveryAddressHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: UpdateDeliveryAddressCommand):
+        address_query = self.db.query(DeliveryAddress).filter(DeliveryAddress.id == command.address_id)
+        address = address_query.first()
+        if not address:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Address with ID: {command.address_id} not found")
+
+        update_data = {}
+        if command.address is not None:
+            update_data[DeliveryAddress.address] = command.address
+        if command.latitude is not None:
+            update_data[DeliveryAddress.latitude] = command.latitude
+        if command.longitude is not None:
+            update_data[DeliveryAddress.longitude] = command.longitude
+        if command.is_default is not None:
+            update_data[DeliveryAddress.is_default] = command.is_default
+        
+        address_query.update(update_data)
+        self.db.commit()
+        return address_query.first()
+
+@dataclass(frozen=True)
+class DeleteDeliveryAddressCommand:
+    address_id: int
+
+class DeleteDeliveryAddressHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteDeliveryAddressCommand):
+        address = self.db.query(DeliveryAddress).filter(DeliveryAddress.id == command.address_id).first()
+        if not address:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Address with ID: {command.address_id} not found")
+
+        self.db.delete(address)
+        self.db.commit()
+        return {"msg": f"Address with id: {command.address_id} deleted successfully"}
+
+
+# =============================================================================================================
+# RIDER COMMANDS
+# =============================================================================================================
+
+@dataclass
+class CreateRiderCommand:
+    firebase_uid: str
+    full_name: str
+    email: EmailStr
+    phone_number: str
+    vehicle_type: str
+    vehicle_number: str
+    license_number: str
+    is_verified: Optional[bool] = False
+    is_active: Optional[bool] = True
+    current_latitude: Optional[float] = None
+    current_longitude: Optional[float] = None
+    fcm_token: Optional[str] = None
+    status: Optional[RiderStatus] = RiderStatus.OFFLINE
+
+class CreateRiderHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateRiderCommand):
+        rider = Rider(
+            firebase_uid=command.firebase_uid,
+            full_name=command.full_name,
+            email=command.email,
+            phone_number=command.phone_number,
+            vehicle_type=command.vehicle_type,
+            vehicle_number=command.vehicle_number,
+            license_number=command.license_number,
+            is_verified=command.is_verified,
+            is_active=command.is_active,
+            current_latitude=command.current_latitude,
+            current_longitude=command.current_longitude,
+            fcm_token=command.fcm_token,
+            status=command.status
+        )
+        self.db.add(rider)
+        self.db.commit()
+        self.db.refresh(rider)
+        
+        # Automatically create rider wallet
+        create_rider_wallet(self.db, rider.id)
+        
+        return rider
+
+@dataclass(frozen=True)
+class UpdateRiderCommand:
+    rider_id: int
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = None
+    vehicle_type: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    license_number: Optional[str] = None
+    is_verified: Optional[bool] = None
+    is_active: Optional[bool] = None
+    current_latitude: Optional[float] = None
+    current_longitude: Optional[float] = None
+    fcm_token: Optional[str] = None
+    status: Optional[RiderStatus] = None
+
+class UpdateRiderHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: UpdateRiderCommand):
+        rider_query = self.db.query(Rider).filter(Rider.id == command.rider_id)
+        rider = rider_query.first()
+        if not rider:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rider with ID: {command.rider_id} not found")
+
+        update_data = {}
+        if command.full_name is not None:
+            update_data[Rider.full_name] = command.full_name
+        if command.email is not None:
+            update_data[Rider.email] = command.email
+        if command.phone_number is not None:
+            update_data[Rider.phone_number] = command.phone_number
+        if command.vehicle_type is not None:
+            update_data[Rider.vehicle_type] = command.vehicle_type
+        if command.vehicle_number is not None:
+            update_data[Rider.vehicle_number] = command.vehicle_number
+        if command.license_number is not None:
+            update_data[Rider.license_number] = command.license_number
+        if command.is_verified is not None:
+            update_data[Rider.is_verified] = command.is_verified
+        if command.is_active is not None:
+            update_data[Rider.is_active] = command.is_active
+        if command.current_latitude is not None:
+            update_data[Rider.current_latitude] = command.current_latitude
+        if command.current_longitude is not None:
+            update_data[Rider.current_longitude] = command.current_longitude
+        if command.fcm_token is not None:
+            update_data[Rider.fcm_token] = command.fcm_token
+        if command.status is not None:
+            update_data[Rider.status] = command.status
+        
+        rider_query.update(update_data)
+        self.db.commit()
+        return rider_query.first()
+
+@dataclass(frozen=True)
+class DeleteRiderCommand:
+    rider_id: int
+
+class DeleteRiderHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteRiderCommand):
+        rider = self.db.query(Rider).filter(Rider.id == command.rider_id).first()
+        if not rider:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rider with ID: {command.rider_id} not found")
+
+        self.db.delete(rider)
+        self.db.commit()
+        return {"msg": f"Rider with id: {command.rider_id} deleted successfully"}
+
+
+# =============================================================================================================
+# ITEM ADDON GROUP COMMANDS
+# =============================================================================================================
+
+@dataclass
+class CreateItemAddonGroupCommand:
+    item_id: int
+    name: str
+    description: Optional[str] = None
+    is_required: Optional[bool] = False
+    min_selections: Optional[int] = 0
+    max_selections: Optional[int] = 1
+
+class CreateItemAddonGroupHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateItemAddonGroupCommand):
+        addon_group = ItemAddonGroup(
+            item_id=command.item_id,
+            name=command.name,
+            description=command.description,
+            is_required=command.is_required,
+            min_selections=command.min_selections,
+            max_selections=command.max_selections
+        )
+        self.db.add(addon_group)
+        self.db.commit()
+        self.db.refresh(addon_group)
+        return addon_group
+
+@dataclass(frozen=True)
+class UpdateItemAddonGroupCommand:
+    group_id: int
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_required: Optional[bool] = None
+    min_selections: Optional[int] = None
+    max_selections: Optional[int] = None
+
+class UpdateItemAddonGroupHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: UpdateItemAddonGroupCommand):
+        group_query = self.db.query(ItemAddonGroup).filter(ItemAddonGroup.id == command.group_id)
+        group = group_query.first()
+        if not group:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Addon group with ID: {command.group_id} not found")
+
+        update_data = {}
+        if command.name is not None:
+            update_data[ItemAddonGroup.name] = command.name
+        if command.description is not None:
+            update_data[ItemAddonGroup.description] = command.description
+        if command.is_required is not None:
+            update_data[ItemAddonGroup.is_required] = command.is_required
+        if command.min_selections is not None:
+            update_data[ItemAddonGroup.min_selections] = command.min_selections
+        if command.max_selections is not None:
+            update_data[ItemAddonGroup.max_selections] = command.max_selections
+        
+        group_query.update(update_data)
+        self.db.commit()
+        return group_query.first()
+
+@dataclass(frozen=True)
+class DeleteItemAddonGroupCommand:
+    group_id: int
+
+class DeleteItemAddonGroupHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteItemAddonGroupCommand):
+        group = self.db.query(ItemAddonGroup).filter(ItemAddonGroup.id == command.group_id).first()
+        if not group:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Addon group with ID: {command.group_id} not found")
+
+        self.db.delete(group)
+        self.db.commit()
+        return {"msg": f"Addon group with id: {command.group_id} deleted successfully"}
+
+
+# =============================================================================================================
+# ITEM ADDON COMMANDS
+# =============================================================================================================
+
+@dataclass
+class CreateItemAddonCommand:
+    group_id: int
+    name: str
+    price: float
+    description: Optional[str] = None
+    is_available: Optional[bool] = True
+
+class CreateItemAddonHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateItemAddonCommand):
+        addon = ItemAddon(
+            group_id=command.group_id,
+            name=command.name,
+            description=command.description,
+            price=command.price,
+            is_available=command.is_available
+        )
+        self.db.add(addon)
+        self.db.commit()
+        self.db.refresh(addon)
+        return addon
+
+@dataclass(frozen=True)
+class UpdateItemAddonCommand:
+    addon_id: int
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    is_available: Optional[bool] = None
+
+class UpdateItemAddonHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: UpdateItemAddonCommand):
+        addon_query = self.db.query(ItemAddon).filter(ItemAddon.id == command.addon_id)
+        addon = addon_query.first()
+        if not addon:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Addon with ID: {command.addon_id} not found")
+
+        update_data = {}
+        if command.name is not None:
+            update_data[ItemAddon.name] = command.name
+        if command.description is not None:
+            update_data[ItemAddon.description] = command.description
+        if command.price is not None:
+            update_data[ItemAddon.price] = command.price
+        if command.is_available is not None:
+            update_data[ItemAddon.is_available] = command.is_available
+        
+        addon_query.update(update_data)
+        self.db.commit()
+        return addon_query.first()
+
+@dataclass(frozen=True)
+class DeleteItemAddonCommand:
+    addon_id: int
+
+class DeleteItemAddonHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteItemAddonCommand):
+        addon = self.db.query(ItemAddon).filter(ItemAddon.id == command.addon_id).first()
+        if not addon:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Addon with ID: {command.addon_id} not found")
+
+        self.db.delete(addon)
+        self.db.commit()
+        return {"msg": f"Addon with id: {command.addon_id} deleted successfully"}
+
+
+# =============================================================================================================
+# ITEM VARIATION COMMANDS
+# =============================================================================================================
+
+@dataclass
+class CreateItemVariationCommand:
+    item_id: int
+    name: str
+    price: float
+    description: Optional[str] = None
+    is_available: Optional[bool] = True
+
+class CreateItemVariationHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateItemVariationCommand):
+        variation = ItemVariation(
+            item_id=command.item_id,
+            name=command.name,
+            description=command.description,
+            price=command.price,
+            is_available=command.is_available
+        )
+        self.db.add(variation)
+        self.db.commit()
+        self.db.refresh(variation)
+        return variation
+
+@dataclass(frozen=True)
+class UpdateItemVariationCommand:
+    variation_id: int
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    is_available: Optional[bool] = None
+
+class UpdateItemVariationHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: UpdateItemVariationCommand):
+        variation_query = self.db.query(ItemVariation).filter(ItemVariation.id == command.variation_id)
+        variation = variation_query.first()
+        if not variation:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Variation with ID: {command.variation_id} not found")
+
+        update_data = {}
+        if command.name is not None:
+            update_data[ItemVariation.name] = command.name
+        if command.description is not None:
+            update_data[ItemVariation.description] = command.description
+        if command.price is not None:
+            update_data[ItemVariation.price] = command.price
+        if command.is_available is not None:
+            update_data[ItemVariation.is_available] = command.is_available
+        
+        variation_query.update(update_data)
+        self.db.commit()
+        return variation_query.first()
+
+@dataclass(frozen=True)
+class DeleteItemVariationCommand:
+    variation_id: int
+
+class DeleteItemVariationHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteItemVariationCommand):
+        variation = self.db.query(ItemVariation).filter(ItemVariation.id == command.variation_id).first()
+        if not variation:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Variation with ID: {command.variation_id} not found")
+
+        self.db.delete(variation)
+        self.db.commit()
+        return {"msg": f"Variation with id: {command.variation_id} deleted successfully"}
+
+
+# =============================================================================================================
+# ORDER COMMANDS
+# =============================================================================================================
+
+@dataclass
+class CreateOrderCommand:
+    user_id: int
+    vendor_id: int
+    delivery_address_id: int
+    subtotal: float
+    total: float
+    rider_id: Optional[int] = None
+    status: Optional[OrderStatus] = OrderStatus.PENDING
+    delivery_fee: Optional[float] = None
+    notes: Optional[str] = None
+    estimated_delivery_time: Optional[datetime] = None
+
+class CreateOrderHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateOrderCommand):
+        order = Order(
+            user_id=command.user_id,
+            vendor_id=command.vendor_id,
+            rider_id=command.rider_id,
+            delivery_address_id=command.delivery_address_id,
+            status=command.status,
+            subtotal=command.subtotal,
+            delivery_fee=command.delivery_fee,
+            total=command.total,
+            notes=command.notes,
+            estimated_delivery_time=command.estimated_delivery_time
+        )
+        self.db.add(order)
+        self.db.commit()
+        self.db.refresh(order)
+        return order
+
+@dataclass(frozen=True)
+class UpdateOrderCommand:
+    order_id: int
+    rider_id: Optional[int] = None
+    status: Optional[OrderStatus] = None
+    delivery_fee: Optional[float] = None
+    total: Optional[float] = None
+    notes: Optional[str] = None
+    estimated_delivery_time: Optional[datetime] = None
+
+class UpdateOrderHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: UpdateOrderCommand):
+        order_query = self.db.query(Order).filter(Order.id == command.order_id)
+        order = order_query.first()
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Order with ID: {command.order_id} not found")
+
+        update_data = {}
+        if command.rider_id is not None:
+            update_data[Order.rider_id] = command.rider_id
+        if command.status is not None:
+            update_data[Order.status] = command.status
+        if command.delivery_fee is not None:
+            update_data[Order.delivery_fee] = command.delivery_fee
+        if command.total is not None:
+            update_data[Order.total] = command.total
+        if command.notes is not None:
+            update_data[Order.notes] = command.notes
+        if command.estimated_delivery_time is not None:
+            update_data[Order.estimated_delivery_time] = command.estimated_delivery_time
+        
+        order_query.update(update_data)
+        self.db.commit()
+        return order_query.first()
+
+@dataclass(frozen=True)
+class DeleteOrderCommand:
+    order_id: int
+
+class DeleteOrderHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteOrderCommand):
+        order = self.db.query(Order).filter(Order.id == command.order_id).first()
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Order with ID: {command.order_id} not found")
+
+        self.db.delete(order)
+        self.db.commit()
+        return {"msg": f"Order with id: {command.order_id} deleted successfully"}
+
+
+# =============================================================================================================
+# CART COMMANDS
+# =============================================================================================================
+
+@dataclass
+class CreateCartCommand:
+    user_id: int
+    vendor_id: int
+    subtotal: Optional[float] = 0.0
+    notes: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+class CreateCartHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateCartCommand):
+        cart = Cart(
+            user_id=command.user_id,
+            vendor_id=command.vendor_id,
+            subtotal=command.subtotal,
+            notes=command.notes,
+            expires_at=command.expires_at
+        )
+        self.db.add(cart)
+        self.db.commit()
+        self.db.refresh(cart)
+        return cart
+
+@dataclass(frozen=True)
+class UpdateCartCommand:
+    cart_id: int
+    subtotal: Optional[float] = None
+    notes: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+class UpdateCartHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: UpdateCartCommand):
+        cart_query = self.db.query(Cart).filter(Cart.id == command.cart_id)
+        cart = cart_query.first()
+        if not cart:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Cart with ID: {command.cart_id} not found")
+
+        update_data = {}
+        if command.subtotal is not None:
+            update_data[Cart.subtotal] = command.subtotal
+        if command.notes is not None:
+            update_data[Cart.notes] = command.notes
+        if command.expires_at is not None:
+            update_data[Cart.expires_at] = command.expires_at
+        
+        cart_query.update(update_data)
+        self.db.commit()
+        return cart_query.first()
+
+@dataclass(frozen=True)
+class DeleteCartCommand:
+    cart_id: int
+
+class DeleteCartHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteCartCommand):
+        cart = self.db.query(Cart).filter(Cart.id == command.cart_id).first()
+        if not cart:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Cart with ID: {command.cart_id} not found")
+
+        self.db.delete(cart)
+        self.db.commit()
+        return {"msg": f"Cart with id: {command.cart_id} deleted successfully"}
+
+
+# =============================================================================================================
+# WALLET COMMANDS  
+# =============================================================================================================
+
+# ==================
+# CREATE WALLETS (Auto-created with user/vendor/rider registration)
+# ==================
+
+def create_user_wallet(db: Session, user_id: int) -> UserWallet:
+    """Automatically create a wallet when a user registers"""
+    wallet = UserWallet(user_id=user_id)
+    db.add(wallet)
+    db.commit()
+    db.refresh(wallet)
+    return wallet
+
+def create_vendor_wallet(db: Session, vendor_id: int) -> VendorWallet:
+    """Automatically create a wallet when a vendor registers"""
+    wallet = VendorWallet(vendor_id=vendor_id)
+    db.add(wallet)
+    db.commit()
+    db.refresh(wallet)
+    return wallet
+
+def create_rider_wallet(db: Session, rider_id: int) -> RiderWallet:
+    """Automatically create a wallet when a rider registers"""
+    wallet = RiderWallet(rider_id=rider_id)
+    db.add(wallet)
+    db.commit()
+    db.refresh(wallet)
+    return wallet
+
+# ==================
+# WALLET FUNDING
+# ==================
+
+@dataclass(frozen=True)
+class FundUserWalletCommand:
+    user_id: int
+    amount: float
+    description: str
+    payment_method: str
+
+class FundUserWalletHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: FundUserWalletCommand):
+        if command.amount <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be greater than zero")
+        
+        wallet = self.db.query(UserWallet).filter(UserWallet.user_id == command.user_id).first()
+        if not wallet:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User wallet not found")
+        
+        if not wallet.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Wallet is not active")
+        
+        if wallet.is_locked:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Wallet is locked")
+        
+        # Record the transaction
+        balance_before = wallet.balance
+        balance_after = balance_before + command.amount
+        
+        transaction = WalletTransaction(
+            user_wallet_id=wallet.id,
+            transaction_type=WalletTransactionType.DEPOSIT,
+            status=WalletTransactionStatus.COMPLETED,
+            amount=command.amount,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            description=command.description,
+            reference_type="funding",
+            processed_at=datetime.utcnow()
+        )
+        
+        # Update wallet balance
+        wallet.balance = balance_after
+        wallet.last_transaction_at = datetime.utcnow()
+        
+        self.db.add(transaction)
+        self.db.commit()
+        self.db.refresh(transaction)
+        
+        return transaction
+
+# ==================
+# WALLET WITHDRAWAL
+# ==================
+
+@dataclass(frozen=True)
+class WithdrawFromWalletCommand:
+    wallet_type: str  # "user", "vendor", or "rider"
+    owner_id: int
+    amount: float
+    description: str
+    withdrawal_method: str
+    account_details: dict
+
+class WithdrawFromWalletHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: WithdrawFromWalletCommand):
+        if command.amount <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be greater than zero")
+        
+        # Get the appropriate wallet
+        wallet = None
+        wallet_id_field = None
+        
+        if command.wallet_type == "user":
+            wallet = self.db.query(UserWallet).filter(UserWallet.user_id == command.owner_id).first()
+            wallet_id_field = "user_wallet_id"
+        elif command.wallet_type == "vendor":
+            wallet = self.db.query(VendorWallet).filter(VendorWallet.vendor_id == command.owner_id).first()
+            wallet_id_field = "vendor_wallet_id"
+            if wallet and command.amount < wallet.minimum_withdrawal:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
+                                  detail=f"Minimum withdrawal amount is {wallet.minimum_withdrawal}")
+        elif command.wallet_type == "rider":
+            wallet = self.db.query(RiderWallet).filter(RiderWallet.rider_id == command.owner_id).first()
+            wallet_id_field = "rider_wallet_id"
+            if wallet and command.amount < wallet.minimum_withdrawal:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
+                                  detail=f"Minimum withdrawal amount is {wallet.minimum_withdrawal}")
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid wallet type")
+        
+        if not wallet:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{command.wallet_type.title()} wallet not found")
+        
+        if not wallet.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Wallet is not active")
+        
+        if wallet.is_locked:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Wallet is locked")
+        
+        if wallet.balance < command.amount:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Insufficient wallet balance")
+        
+        # Record the transaction
+        balance_before = wallet.balance
+        balance_after = balance_before - command.amount
+        
+        transaction_data = {
+            wallet_id_field: wallet.id,
+            "transaction_type": WalletTransactionType.WITHDRAWAL,
+            "status": WalletTransactionStatus.PENDING,  # Withdrawals start as pending
+            "amount": command.amount,
+            "balance_before": balance_before,
+            "balance_after": balance_after,
+            "description": command.description,
+            "reference_type": "withdrawal",
+        }
+        
+        transaction = WalletTransaction(**transaction_data)
+        
+        # Update wallet balance
+        wallet.balance = balance_after
+        wallet.last_transaction_at = datetime.utcnow()
+        
+        self.db.add(transaction)
+        self.db.commit()
+        self.db.refresh(transaction)
+        
+        return transaction
+
+# ==================
+# WALLET TRANSFERS
+# ==================
+
+@dataclass(frozen=True)
+class TransferBetweenWalletsCommand:
+    sender_type: str  # "user", "vendor", or "rider"
+    sender_id: int
+    recipient_type: str  # "user", "vendor", or "rider"
+    recipient_id: int
+    amount: float
+    description: str
+
+class TransferBetweenWalletsHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: TransferBetweenWalletsCommand):
+        if command.amount <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be greater than zero")
+        
+        # Get sender wallet
+        sender_wallet = self._get_wallet(command.sender_type, command.sender_id)
+        if not sender_wallet:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sender wallet not found")
+        
+        # Get recipient wallet
+        recipient_wallet = self._get_wallet(command.recipient_type, command.recipient_id)
+        if not recipient_wallet:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient wallet not found")
+        
+        # Validate sender wallet
+        if not sender_wallet.is_active or sender_wallet.is_locked:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sender wallet is not available")
+        
+        if sender_wallet.balance < command.amount:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Insufficient sender wallet balance")
+        
+        # Validate recipient wallet
+        if not recipient_wallet.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Recipient wallet is not active")
+        
+        # Process transfer
+        sender_balance_before = sender_wallet.balance
+        sender_balance_after = sender_balance_before - command.amount
+        
+        recipient_balance_before = recipient_wallet.balance
+        recipient_balance_after = recipient_balance_before + command.amount
+        
+        # Create sender transaction (debit)
+        sender_transaction_data = {
+            f"{command.sender_type}_wallet_id": sender_wallet.id,
+            "transaction_type": WalletTransactionType.TRANSFER,
+            "status": WalletTransactionStatus.COMPLETED,
+            "amount": -command.amount,  # Negative for debit
+            "balance_before": sender_balance_before,
+            "balance_after": sender_balance_after,
+            "description": f"Transfer to {command.recipient_type} ID {command.recipient_id}: {command.description}",
+            "reference_type": "transfer_out",
+            "processed_at": datetime.utcnow()
+        }
+        
+        # Create recipient transaction (credit)
+        recipient_transaction_data = {
+            f"{command.recipient_type}_wallet_id": recipient_wallet.id,
+            "transaction_type": WalletTransactionType.TRANSFER,
+            "status": WalletTransactionStatus.COMPLETED,
+            "amount": command.amount,  # Positive for credit
+            "balance_before": recipient_balance_before,
+            "balance_after": recipient_balance_after,
+            "description": f"Transfer from {command.sender_type} ID {command.sender_id}: {command.description}",
+            "reference_type": "transfer_in",
+            "processed_at": datetime.utcnow()
+        }
+        
+        sender_transaction = WalletTransaction(**sender_transaction_data)
+        recipient_transaction = WalletTransaction(**recipient_transaction_data)
+        
+        # Update wallet balances
+        sender_wallet.balance = sender_balance_after
+        sender_wallet.last_transaction_at = datetime.utcnow()
+        
+        recipient_wallet.balance = recipient_balance_after
+        recipient_wallet.last_transaction_at = datetime.utcnow()
+        
+        self.db.add_all([sender_transaction, recipient_transaction])
+        self.db.commit()
+        
+        return {
+            "sender_transaction": sender_transaction,
+            "recipient_transaction": recipient_transaction,
+            "message": "Transfer completed successfully"
+        }
+    
+    def _get_wallet(self, wallet_type: str, owner_id: int):
+        """Helper method to get wallet by type and owner ID"""
+        if wallet_type == "user":
+            return self.db.query(UserWallet).filter(UserWallet.user_id == owner_id).first()
+        elif wallet_type == "vendor":
+            return self.db.query(VendorWallet).filter(VendorWallet.vendor_id == owner_id).first()
+        elif wallet_type == "rider":
+            return self.db.query(RiderWallet).filter(RiderWallet.rider_id == owner_id).first()
+        return None
+
+# ==================
+# PAYMENT PROCESSING
+# ==================
+
+@dataclass(frozen=True)
+class ProcessOrderPaymentCommand:
+    order_id: int
+    user_id: int
+    amount: float
+
+class ProcessOrderPaymentHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: ProcessOrderPaymentCommand):
+        # Get user wallet
+        wallet = self.db.query(UserWallet).filter(UserWallet.user_id == command.user_id).first()
+        if not wallet:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User wallet not found")
+        
+        if not wallet.is_active or wallet.is_locked:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Wallet is not available")
+        
+        if wallet.balance < command.amount:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Insufficient wallet balance")
+        
+        # Process payment
+        balance_before = wallet.balance
+        balance_after = balance_before - command.amount
+        
+        transaction = WalletTransaction(
+            user_wallet_id=wallet.id,
+            transaction_type=WalletTransactionType.PAYMENT,
+            status=WalletTransactionStatus.COMPLETED,
+            amount=command.amount,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            description=f"Payment for order #{command.order_id}",
+            reference_id=str(command.order_id),
+            reference_type="order",
+            processed_at=datetime.utcnow()
+        )
+        
+        # Update wallet balance
+        wallet.balance = balance_after
+        wallet.last_transaction_at = datetime.utcnow()
+        
+        self.db.add(transaction)
+        self.db.commit()
+        self.db.refresh(transaction)
+        
+        return transaction
+
+# ==================
+# SET TRANSACTION PIN
+# ==================
+
+@dataclass(frozen=True)
+class SetTransactionPinCommand:
+    user_id: int
+    transaction_pin: str
+
+class SetTransactionPinHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: SetTransactionPinCommand):
+        wallet = self.db.query(UserWallet).filter(UserWallet.user_id == command.user_id).first()
+        if not wallet:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User wallet not found")
+        
+        # In a real app, you'd hash the PIN before storing
+        wallet.transaction_pin = command.transaction_pin
+        self.db.commit()
+        
+        return {"message": "Transaction PIN set successfully"}
+
+
+# =============================================================================================================
+# ORDER ITEM COMMANDS
+# =============================================================================================================
+
+@dataclass(frozen=True)
+class CreateOrderItemCommand:
+    order_id: int
+    item_id: int
+    unit_price: float
+    subtotal: float
+    variation_id: Optional[int] = None
+    quantity: int = 1
+    notes: Optional[str] = None
+
+class CreateOrderItemHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateOrderItemCommand):
+        order_item = OrderItem(
+            order_id=command.order_id,
+            item_id=command.item_id,
+            variation_id=command.variation_id,
+            quantity=command.quantity,
+            unit_price=command.unit_price,
+            subtotal=command.subtotal,
+            notes=command.notes
+        )
+        self.db.add(order_item)
+        self.db.commit()
+        self.db.refresh(order_item)
+        return order_item
+
+@dataclass(frozen=True)
+class UpdateOrderItemCommand:
+    order_item_id: int
+    quantity: Optional[int] = None
+    unit_price: Optional[float] = None
+    subtotal: Optional[float] = None
+    notes: Optional[str] = None
+
+class UpdateOrderItemHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: UpdateOrderItemCommand):
+        order_item_query = self.db.query(OrderItem).filter(OrderItem.id == command.order_item_id)
+        order_item = order_item_query.first()
+        
+        if not order_item:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Order item with ID: {command.order_item_id} not found")
+        
+        update_data = {}
+        if command.quantity is not None:
+            update_data["quantity"] = command.quantity
+        if command.unit_price is not None:
+            update_data["unit_price"] = command.unit_price
+        if command.subtotal is not None:
+            update_data["subtotal"] = command.subtotal
+        if command.notes is not None:
+            update_data["notes"] = command.notes
+            
+        if update_data:
+            order_item_query.update(update_data)
+            self.db.commit()
+        
+        return order_item_query.first()
+
+@dataclass(frozen=True)
+class DeleteOrderItemCommand:
+    order_item_id: int
+
+class DeleteOrderItemHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteOrderItemCommand):
+        order_item = self.db.query(OrderItem).filter(OrderItem.id == command.order_item_id).first()
+        if not order_item:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Order item with ID: {command.order_item_id} not found")
+
+        self.db.delete(order_item)
+        self.db.commit()
+        return {"msg": f"Order item with id: {command.order_item_id} deleted successfully"}
+
+
+# =============================================================================================================
+# ORDER ITEM ADDON COMMANDS
+# =============================================================================================================
+
+@dataclass(frozen=True)
+class CreateOrderItemAddonCommand:
+    order_item_id: int
+    addon_id: int
+    price: float
+
+class CreateOrderItemAddonHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateOrderItemAddonCommand):
+        order_item_addon = OrderItemAddon(
+            order_item_id=command.order_item_id,
+            addon_id=command.addon_id,
+            price=command.price
+        )
+        self.db.add(order_item_addon)
+        self.db.commit()
+        self.db.refresh(order_item_addon)
+        return order_item_addon
+
+@dataclass(frozen=True)
+class DeleteOrderItemAddonCommand:
+    order_item_addon_id: int
+
+class DeleteOrderItemAddonHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteOrderItemAddonCommand):
+        order_item_addon = self.db.query(OrderItemAddon).filter(OrderItemAddon.id == command.order_item_addon_id).first()
+        if not order_item_addon:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Order item addon with ID: {command.order_item_addon_id} not found")
+
+        self.db.delete(order_item_addon)
+        self.db.commit()
+        return {"msg": f"Order item addon with id: {command.order_item_addon_id} deleted successfully"}
+
+
+# =============================================================================================================
+# ORDER TRACKING COMMANDS
+# =============================================================================================================
+
+@dataclass(frozen=True)
+class CreateOrderTrackingCommand:
+    order_id: int
+    status: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+class CreateOrderTrackingHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateOrderTrackingCommand):
+        # Convert string status to enum
+        try:
+            status_enum = OrderStatus(command.status.lower())
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
+                              detail=f"Invalid status: {command.status}")
+        
+        order_tracking = OrderTracking(
+            order_id=command.order_id,
+            status=status_enum,
+            latitude=command.latitude,
+            longitude=command.longitude
+        )
+        self.db.add(order_tracking)
+        self.db.commit()
+        self.db.refresh(order_tracking)
+        return order_tracking
+
+@dataclass(frozen=True)
+class DeleteOrderTrackingCommand:
+    order_tracking_id: int
+
+class DeleteOrderTrackingHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteOrderTrackingCommand):
+        order_tracking = self.db.query(OrderTracking).filter(OrderTracking.id == command.order_tracking_id).first()
+        if not order_tracking:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Order tracking with ID: {command.order_tracking_id} not found")
+
+        self.db.delete(order_tracking)
+        self.db.commit()
+        return {"msg": f"Order tracking with id: {command.order_tracking_id} deleted successfully"}
+
+
+# =============================================================================================================
+# CART ITEM COMMANDS  
+# =============================================================================================================
+
+@dataclass(frozen=True)
+class CreateCartItemCommand:
+    cart_id: int
+    item_id: int
+    unit_price: float
+    subtotal: float
+    variation_id: Optional[int] = None
+    quantity: int = 1
+    notes: Optional[str] = None
+
+class CreateCartItemHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateCartItemCommand):
+        cart_item = CartItem(
+            cart_id=command.cart_id,
+            item_id=command.item_id,
+            variation_id=command.variation_id,
+            quantity=command.quantity,
+            unit_price=command.unit_price,
+            subtotal=command.subtotal,
+            notes=command.notes
+        )
+        self.db.add(cart_item)
+        self.db.commit()
+        self.db.refresh(cart_item)
+        return cart_item
+
+@dataclass(frozen=True)
+class UpdateCartItemCommand:
+    cart_item_id: int
+    quantity: Optional[int] = None
+    unit_price: Optional[float] = None
+    subtotal: Optional[float] = None
+    notes: Optional[str] = None
+
+class UpdateCartItemHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: UpdateCartItemCommand):
+        cart_item_query = self.db.query(CartItem).filter(CartItem.id == command.cart_item_id)
+        cart_item = cart_item_query.first()
+        
+        if not cart_item:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Cart item with ID: {command.cart_item_id} not found")
+        
+        update_data = {}
+        if command.quantity is not None:
+            update_data["quantity"] = command.quantity
+        if command.unit_price is not None:
+            update_data["unit_price"] = command.unit_price
+        if command.subtotal is not None:
+            update_data["subtotal"] = command.subtotal
+        if command.notes is not None:
+            update_data["notes"] = command.notes
+            
+        if update_data:
+            update_data["updated_at"] = datetime.utcnow()
+            cart_item_query.update(update_data)
+            self.db.commit()
+        
+        return cart_item_query.first()
+
+@dataclass(frozen=True)
+class DeleteCartItemCommand:
+    cart_item_id: int
+
+class DeleteCartItemHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteCartItemCommand):
+        cart_item = self.db.query(CartItem).filter(CartItem.id == command.cart_item_id).first()
+        if not cart_item:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Cart item with ID: {command.cart_item_id} not found")
+
+        self.db.delete(cart_item)
+        self.db.commit()
+        return {"msg": f"Cart item with id: {command.cart_item_id} deleted successfully"}
+
+
+# =============================================================================================================
+# CART ITEM ADDON COMMANDS
+# =============================================================================================================
+
+@dataclass(frozen=True)
+class CreateCartItemAddonCommand:
+    cart_item_id: int
+    addon_id: int
+    price: float
+
+class CreateCartItemAddonHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: CreateCartItemAddonCommand):
+        cart_item_addon = CartItemAddon(
+            cart_item_id=command.cart_item_id,
+            addon_id=command.addon_id,
+            price=command.price
+        )
+        self.db.add(cart_item_addon)
+        self.db.commit()
+        self.db.refresh(cart_item_addon)
+        return cart_item_addon
+
+@dataclass(frozen=True)
+class DeleteCartItemAddonCommand:
+    cart_item_addon_id: int
+
+class DeleteCartItemAddonHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, command: DeleteCartItemAddonCommand):
+        cart_item_addon = self.db.query(CartItemAddon).filter(CartItemAddon.id == command.cart_item_addon_id).first()
+        if not cart_item_addon:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Cart item addon with ID: {command.cart_item_addon_id} not found")
+
+        self.db.delete(cart_item_addon)
+        self.db.commit()
+        return {"msg": f"Cart item addon with id: {command.cart_item_addon_id} deleted successfully"}

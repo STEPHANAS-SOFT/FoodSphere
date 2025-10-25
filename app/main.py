@@ -2,14 +2,25 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
+from sqlalchemy.orm import configure_mappers
 from .shared.database import engine
 from . import models
-from . import routes as user
-from . import routes as vendor
-from . import routes as item
+from . import routes
+from .routes import (
+    item_category_router, delivery_address_router, rider_router,
+    item_addon_group_router, item_addon_router, item_variation_router,
+    order_router, cart_router, wallet_router
+)
+from .routes.order_item_routes import router as order_item_router
+from .routes.order_item_addon_routes import router as order_item_addon_router
+from .routes.order_tracking_routes import router as order_tracking_router
+from .routes.cart_item_routes import router as cart_item_router
+from .routes.cart_item_addon_routes import router as cart_item_addon_router
 
 
+# Ensure all models are imported and mappers are configured
 models.Base.metadata.create_all(bind=engine)
+configure_mappers()  # Explicitly configure all mappers
 
 
 # Initialize FastAPI app
@@ -65,6 +76,25 @@ if __name__ == "__main__":
     run()
 
 
-app.include_router(user.user_router)
-app.include_router(vendor.vendor_router)
-app.include_router(item.item_router)
+# Include original routers
+app.include_router(routes.user_router)
+app.include_router(routes.vendor_router)
+app.include_router(routes.item_router)
+
+# Include new entity routers
+app.include_router(item_category_router)
+app.include_router(delivery_address_router)
+app.include_router(rider_router)
+app.include_router(item_addon_group_router)
+app.include_router(item_addon_router)
+app.include_router(item_variation_router)
+app.include_router(order_router)
+app.include_router(cart_router)
+app.include_router(wallet_router)
+
+# Include missing model routers
+app.include_router(order_item_router)
+app.include_router(order_item_addon_router)
+app.include_router(order_tracking_router)
+app.include_router(cart_item_router)
+app.include_router(cart_item_addon_router)
