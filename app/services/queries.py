@@ -9,6 +9,7 @@ from ..models import (
     Cart, CartItem, CartItemAddon, UserWallet, VendorWallet, 
     RiderWallet, WalletTransaction
 )
+from ..utils.errors import ErrorHandler, ErrorMessages
 from uuid import UUID
 
 
@@ -30,8 +31,7 @@ class GetAllUserQueryHandler:
         all_user = (self.db.query(User)
                     .offset(skip).limit(limit).all()
                    )
-        if not all_user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        # Return empty list if no users found - this is not an error
         return all_user
     
 
@@ -47,9 +47,19 @@ class GetUserByIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetUserByIdQuery):
+        # Validate user ID
+        if query.user_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid user ID. User ID must be a positive number."
+            )
+        
         user = self.db.query(User).filter(User.id == query.user_id).first()
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User with ID {0} not found".format(query.user_id))
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No user found with ID {query.user_id}. Please verify the user ID is correct."
+            )
         return user
     
 
@@ -73,8 +83,7 @@ class GetAllVendorQueryHandler:
                     .offset(skip).limit(limit).all()
                    )
         
-        if not all_vendors:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found")
+        # Return empty list if no vendors found - this is not an error
         return all_vendors
 
 
@@ -88,6 +97,12 @@ class GetVendorByIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetVendorByIdQuery):
+        # Validate vendor ID
+        if query.vendor_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid vendor ID. Vendor ID must be a positive number."
+            )
 
         vendor = (
                  self.db.query(Vendor)
@@ -97,7 +112,10 @@ class GetVendorByIdQueryHandler:
         )
 
         if not vendor:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor with ID {0} not found".format(query.vendor_id))
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No vendor found with ID {query.vendor_id}. The vendor may not exist or may have been deactivated."
+            )
         return vendor
     
 
@@ -142,8 +160,7 @@ class GetAllItemQueryHandler:
         all_items = (self.db.query(Item)
                     .offset(skip).limit(limit).all()
                    )
-        if not all_items:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Items not found")
+        # Return empty list if no items found - this is not an error
         return all_items
 
 
@@ -159,9 +176,19 @@ class GetItemByIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetItemByIdQuery):
+        # Validate item ID
+        if query.item_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid item ID. Item ID must be a positive number."
+            )
+        
         item = self.db.query(Item).filter(Item.id == query.item_id).first()
         if not item:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item with ID {0} not found".format(query.item_id))
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No menu item found with ID {query.item_id}. The item may not exist or may have been removed from the menu."
+            )
         return item
     
 
@@ -179,9 +206,20 @@ class GetItemByNameQueryHandler:
         self.db = db
 
     def handle(self, query: GetItemByNameQuery):
-        item_list = self.db.query(Item).filter(Item.name.ilike(f"%{query.name}%")).all()
+        # Validate search query
+        if not query.name or not query.name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Search term cannot be empty. Please provide a menu item name to search for."
+            )
+        
+        search_term = query.name.strip()
+        item_list = self.db.query(Item).filter(Item.name.ilike(f"%{search_term}%")).all()
         if not item_list:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item by name: {0} not found".format(query.name))
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No menu items found matching '{search_term}'. Try searching with different keywords or browse all items."
+            )
         return item_list
 
 
@@ -199,8 +237,6 @@ class GetAllItemCategoryQueryHandler:
 
     def handle(self, query: GetAllItemCategoryQuery, skip: int = 0, limit: int = 10):
         all_categories = self.db.query(ItemCategory).offset(skip).limit(limit).all()
-        if not all_categories:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Categories not found")
         return all_categories
 
 @dataclass
@@ -212,9 +248,19 @@ class GetItemCategoryByIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetItemCategoryByIdQuery):
+        # Validate category ID
+        if query.category_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid category ID. Category ID must be a positive number."
+            )
+        
         category = self.db.query(ItemCategory).filter(ItemCategory.id == query.category_id).first()
         if not category:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category with ID {0} not found".format(query.category_id))
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No category found with ID {query.category_id}. The category may not exist or may have been removed."
+            )
         return category
 
 @dataclass(frozen=True)
@@ -226,9 +272,20 @@ class GetItemCategoryByNameQueryHandler:
         self.db = db
 
     def handle(self, query: GetItemCategoryByNameQuery):
-        category_list = self.db.query(ItemCategory).filter(ItemCategory.name.ilike(f"%{query.name}%")).all()
+        # Validate search query
+        if not query.name or not query.name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Search term cannot be empty. Please provide a category name to search for."
+            )
+        
+        search_term = query.name.strip()
+        category_list = self.db.query(ItemCategory).filter(ItemCategory.name.ilike(f"%{search_term}%")).all()
         if not category_list:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category by name: {0} not found".format(query.name))
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No categories found matching '{search_term}'. Try searching with different keywords or browse all categories."
+            )
         return category_list
 
 
@@ -246,8 +303,6 @@ class GetAllDeliveryAddressQueryHandler:
 
     def handle(self, query: GetAllDeliveryAddressQuery, skip: int = 0, limit: int = 10):
         all_addresses = self.db.query(DeliveryAddress).offset(skip).limit(limit).all()
-        if not all_addresses:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Addresses not found")
         return all_addresses
 
 @dataclass
@@ -259,9 +314,19 @@ class GetDeliveryAddressByIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetDeliveryAddressByIdQuery):
+        # Validate address ID
+        if query.address_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid address ID. Address ID must be a positive number."
+            )
+        
         address = self.db.query(DeliveryAddress).filter(DeliveryAddress.id == query.address_id).first()
         if not address:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Address with ID {0} not found".format(query.address_id))
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No delivery address found with ID {query.address_id}. The address may have been deleted or the ID is incorrect."
+            )
         return address
 
 @dataclass(frozen=True)
@@ -273,9 +338,15 @@ class GetDeliveryAddressByUserIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetDeliveryAddressByUserIdQuery):
+        # Validate user ID
+        if query.user_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid user ID. User ID must be a positive number."
+            )
+        
         addresses = self.db.query(DeliveryAddress).filter(DeliveryAddress.user_id == query.user_id).all()
-        if not addresses:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Addresses for user ID {0} not found".format(query.user_id))
+        # Return empty list if no addresses found - user may not have saved any addresses yet
         return addresses
 
 
@@ -293,8 +364,6 @@ class GetAllRiderQueryHandler:
 
     def handle(self, query: GetAllRiderQuery, skip: int = 0, limit: int = 10):
         all_riders = self.db.query(Rider).offset(skip).limit(limit).all()
-        if not all_riders:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Riders not found")
         return all_riders
 
 @dataclass
@@ -340,8 +409,6 @@ class GetAllItemAddonGroupQueryHandler:
 
     def handle(self, query: GetAllItemAddonGroupQuery, skip: int = 0, limit: int = 10):
         all_groups = self.db.query(ItemAddonGroup).offset(skip).limit(limit).all()
-        if not all_groups:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Addon groups not found")
         return all_groups
 
 @dataclass
@@ -367,9 +434,15 @@ class GetItemAddonGroupByItemIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetItemAddonGroupByItemIdQuery):
+        # Validate item ID
+        if query.item_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid item ID. Item ID must be a positive number."
+            )
+        
         groups = self.db.query(ItemAddonGroup).filter(ItemAddonGroup.item_id == query.item_id).all()
-        if not groups:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Addon groups for item ID {0} not found".format(query.item_id))
+        # Return empty list if no addon groups found - item may not have addon groups
         return groups
 
 
@@ -387,8 +460,6 @@ class GetAllItemAddonQueryHandler:
 
     def handle(self, query: GetAllItemAddonQuery, skip: int = 0, limit: int = 10):
         all_addons = self.db.query(ItemAddon).offset(skip).limit(limit).all()
-        if not all_addons:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Addons not found")
         return all_addons
 
 @dataclass
@@ -414,9 +485,15 @@ class GetItemAddonByGroupIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetItemAddonByGroupIdQuery):
+        # Validate group ID
+        if query.group_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid group ID. Group ID must be a positive number."
+            )
+        
         addons = self.db.query(ItemAddon).filter(ItemAddon.group_id == query.group_id).all()
-        if not addons:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Addons for group ID {0} not found".format(query.group_id))
+        # Return empty list if no addons found - group may not have any addons
         return addons
 
 
@@ -434,8 +511,6 @@ class GetAllItemVariationQueryHandler:
 
     def handle(self, query: GetAllItemVariationQuery, skip: int = 0, limit: int = 10):
         all_variations = self.db.query(ItemVariation).offset(skip).limit(limit).all()
-        if not all_variations:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variations not found")
         return all_variations
 
 @dataclass
@@ -461,9 +536,15 @@ class GetItemVariationByItemIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetItemVariationByItemIdQuery):
+        # Validate item ID
+        if query.item_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid item ID. Item ID must be a positive number."
+            )
+        
         variations = self.db.query(ItemVariation).filter(ItemVariation.item_id == query.item_id).all()
-        if not variations:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variations for item ID {0} not found".format(query.item_id))
+        # Return empty list if no variations found - item may not have variations
         return variations
 
 
@@ -490,8 +571,6 @@ class GetAllOrderQueryHandler:
             .limit(limit)
             .all()
         )
-        if not all_orders:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orders not found")
         return all_orders
 
 @dataclass
@@ -503,6 +582,13 @@ class GetOrderByIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetOrderByIdQuery):
+        # Validate order ID
+        if query.order_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid order ID. Order ID must be a positive number."
+            )
+        
         order = (
             self.db.query(Order)
             .options(
@@ -513,7 +599,10 @@ class GetOrderByIdQueryHandler:
             .first()
         )
         if not order:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order with ID {0} not found".format(query.order_id))
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No order found with ID {query.order_id}. Please verify the order number is correct."
+            )
         return order
 
 @dataclass(frozen=True)
@@ -525,6 +614,13 @@ class GetOrderByUserIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetOrderByUserIdQuery):
+        # Validate user ID
+        if query.user_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid user ID. User ID must be a positive number."
+            )
+        
         orders = (
             self.db.query(Order)
             .options(
@@ -534,8 +630,7 @@ class GetOrderByUserIdQueryHandler:
             .filter(Order.user_id == query.user_id)
             .all()
         )
-        if not orders:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orders for user ID {0} not found".format(query.user_id))
+        # Return empty list instead of 404 - this is a collection endpoint
         return orders
 
 @dataclass(frozen=True)
@@ -569,6 +664,13 @@ class GetOrderByRiderIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetOrderByRiderIdQuery):
+        # Validate rider ID
+        if query.rider_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid rider ID. Rider ID must be a positive number."
+            )
+        
         orders = (
             self.db.query(Order)
             .options(
@@ -578,8 +680,7 @@ class GetOrderByRiderIdQueryHandler:
             .filter(Order.rider_id == query.rider_id)
             .all()
         )
-        if not orders:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orders for rider ID {0} not found".format(query.rider_id))
+        # Return empty list if no orders found - rider may not have any assigned orders yet
         return orders
 
 
@@ -603,8 +704,6 @@ class GetAllCartQueryHandler:
             .limit(limit)
             .all()
         )
-        if not all_carts:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carts not found")
         return all_carts
 
 @dataclass
@@ -616,6 +715,13 @@ class GetCartByIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetCartByIdQuery):
+        # Validate cart ID
+        if query.cart_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid cart ID. Cart ID must be a positive number."
+            )
+        
         cart = (
             self.db.query(Cart)
             .options(joinedload(Cart.items).joinedload(CartItem.addons))
@@ -623,7 +729,10 @@ class GetCartByIdQueryHandler:
             .first()
         )
         if not cart:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cart with ID {0} not found".format(query.cart_id))
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No shopping cart found with ID {query.cart_id}. The cart may have expired or been removed."
+            )
         return cart
 
 @dataclass(frozen=True)
@@ -635,14 +744,21 @@ class GetCartByUserIdQueryHandler:
         self.db = db
 
     def handle(self, query: GetCartByUserIdQuery):
+        # Validate user ID
+        if query.user_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid user ID. User ID must be a positive number."
+            )
+        
         carts = (
             self.db.query(Cart)
             .options(joinedload(Cart.items).joinedload(CartItem.addons))
             .filter(Cart.user_id == query.user_id)
             .all()
         )
-        if not carts:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carts for user ID {0} not found".format(query.user_id))
+        # Return empty list if no carts found - user may not have any active carts
+        return carts
         return carts
 
 
@@ -661,6 +777,21 @@ class GetWalletBalanceQueryHandler:
         self.db = db
 
     def handle(self, query: GetWalletBalanceQuery):
+        # Validate wallet type
+        valid_wallet_types = ["user", "vendor", "rider"]
+        if query.wallet_type not in valid_wallet_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail=f"Invalid wallet type '{query.wallet_type}'. Must be one of: {', '.join(valid_wallet_types)}"
+            )
+        
+        # Validate owner ID
+        if query.owner_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail=f"Invalid {query.wallet_type} ID. ID must be a positive number."
+            )
+        
         wallet = None
         
         if query.wallet_type == "user":
@@ -669,11 +800,12 @@ class GetWalletBalanceQueryHandler:
             wallet = self.db.query(VendorWallet).filter(VendorWallet.vendor_id == query.owner_id).first()
         elif query.wallet_type == "rider":
             wallet = self.db.query(RiderWallet).filter(RiderWallet.rider_id == query.owner_id).first()
-        else:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid wallet type")
         
         if not wallet:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{query.wallet_type.title()} wallet not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No wallet found for {query.wallet_type} with ID {query.owner_id}. The {query.wallet_type} may not exist or the wallet may not have been created yet."
+            )
         
         return wallet
 

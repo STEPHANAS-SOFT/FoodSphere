@@ -9,6 +9,7 @@ from ..models import (
     Cart, CartItem, CartItemAddon, UserWallet, VendorWallet, 
     RiderWallet, WalletTransaction, WalletTransactionType, WalletTransactionStatus
 )
+from ..utils.errors import ErrorHandler, ErrorMessages
 from dataclasses import dataclass
 from typing import Optional, List
 
@@ -36,25 +37,66 @@ class CreateUserHandler:
         self.db = db
 
     def handle(self, command: CreateUserCommand):
+        # Validate required fields
+        if not command.firebase_uid or not command.firebase_uid.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Firebase UID is required and cannot be empty"
+            )
+        
+        if not command.email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Email address is required"
+            )
+            
+        if not command.full_name or not command.full_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Full name is required and cannot be empty"
+            )
+        
+        # Check if user already exists by email
+        existing_user = self.db.query(User).filter(User.email == command.email).first()
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, 
+                detail=f"A user account with email '{command.email}' already exists. Please use a different email address or try signing in instead."
+            )
+        
+        # Check if user already exists by firebase_uid
+        existing_firebase_user = self.db.query(User).filter(User.firebase_uid == command.firebase_uid).first()
+        if existing_firebase_user:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, 
+                detail="This Firebase account is already linked to another user profile. Please contact support if you believe this is an error."
+            )
 
-        # create user
-        user = User(
-            firebase_uid=command.firebase_uid,
-            email=command.email,
-            phone_number=command.phone_number,
-            full_name=command.full_name,
-            fcm_token=command.fcm_token,
-            latitude=command.latitude,  
-            longitude=command.longitude,
-        )
-        self.db.add(user)
-        self.db.commit() 
-        self.db.refresh(user)
-        
-        # Automatically create user wallet
-        create_user_wallet(self.db, user.id)
-        
-        return user
+        try:
+            # create user
+            user = User(
+                firebase_uid=command.firebase_uid,
+                email=command.email,
+                phone_number=command.phone_number,
+                full_name=command.full_name,
+                fcm_token=command.fcm_token,
+                latitude=command.latitude,  
+                longitude=command.longitude,
+            )
+            self.db.add(user)
+            self.db.commit() 
+            self.db.refresh(user)
+            
+            # Automatically create user wallet
+            create_user_wallet(self.db, user.id)
+            
+            return user
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail=f"We encountered an error while creating your account. Please try again. If the problem persists, contact support. Error: {str(e)}"
+            )
     
 
 
@@ -77,23 +119,47 @@ class UpdateUserHandler:
         self.db = db
 
     def handle(self, command: UpdateUserCommand):
+        # Validate user ID
+        if command.user_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid user ID. User ID must be a positive number."
+            )
+        
         user_query = self.db.query(User).filter(User.id == command.user_id)
         user = user_query.first()
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with ID: {command.user_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"User with ID {command.user_id} not found. Please verify the user ID and try again."
+            )
 
-        user_query.update({
-            User.firebase_uid: command.firebase_uid,
-            User.email: command.email,
-            User.phone_number: command.phone_number,
-            User.full_name: command.full_name,
-            User.fcm_token: command.fcm_token,
-            User.latitude: command.latitude,
-            User.longitude: command.longitude,
-        })
-        
-        self.db.commit()
-        return user_query.first()
+        # Validate required fields
+        if not command.full_name or not command.full_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Full name is required and cannot be empty"
+            )
+
+        try:
+            user_query.update({
+                User.firebase_uid: command.firebase_uid,
+                User.email: command.email,
+                User.phone_number: command.phone_number,
+                User.full_name: command.full_name,
+                User.fcm_token: command.fcm_token,
+                User.latitude: command.latitude,
+                User.longitude: command.longitude,
+            })
+            
+            self.db.commit()
+            return user_query.first()
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail=f"Failed to update user profile. Please try again. Error: {str(e)}"
+            )
 
 
 
@@ -111,13 +177,30 @@ class DeleteUserHandler:
         self.db = db
 
     def handle(self, command: DeleteUserCommand):
+        # Validate user ID
+        if command.user_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid user ID. User ID must be a positive number."
+            )
+        
         user = self.db.query(User).filter(User.id == command.user_id).first()
         if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with ID: {command.user_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"User with ID {command.user_id} not found. The user may have already been deleted or the ID is incorrect."
+            )
 
-        self.db.delete(user)
-        self.db.commit()
-        return {"msg": f"User with id: {command.user_id} deleted successfully"}
+        try:
+            self.db.delete(user)
+            self.db.commit()
+            return {"message": f"User account for '{user.full_name}' (ID: {command.user_id}) has been successfully deleted."}
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail=f"Failed to delete user account. Please try again. Error: {str(e)}"
+            )
 
 
 # =============================================================================================================
@@ -151,43 +234,98 @@ class CreateVendorHandler:
             self.db = db
 
         def handle(self, command: CreateVendorCommand):
+            # Validate required fields
+            if not command.firebase_uid or not command.firebase_uid.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Firebase UID is required and cannot be empty"
+                )
+            
+            if not command.name or not command.name.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Vendor name is required and cannot be empty"
+                )
+            
+            if not command.email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Email address is required for vendor registration"
+                )
+            
+            if not command.address or not command.address.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Business address is required"
+                )
+            
+            # Validate coordinates
+            if not isinstance(command.latitude, (int, float)) or not isinstance(command.longitude, (int, float)):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Valid latitude and longitude coordinates are required for business location"
+                )
+            
+            # Check if vendor already exists by email
+            existing_vendor = self.db.query(Vendor).filter(Vendor.email == command.email).first()
+            if existing_vendor:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, 
+                    detail=f"A vendor account with email '{command.email}' already exists. Please use a different email address or try signing in instead."
+                )
+            
+            # Check if vendor already exists by firebase_uid
+            existing_firebase_vendor = self.db.query(Vendor).filter(Vendor.firebase_uid == command.firebase_uid).first()
+            if existing_firebase_vendor:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, 
+                    detail="This Firebase account is already linked to another vendor profile. Please contact support if you believe this is an error."
+                )
 
             # Ensure vendor_type is Enum instance
             if isinstance(command.vendor_type, str):
                 try:
                     command.vendor_type = VendorType(command.vendor_type.lower())
                 except ValueError:
-                    raise ValueError(
-                        f"Invalid vendor type: '{command.vendor_type}'. "
-                        f"Must be one of: {[v.value for v in VendorType]}"
+                    valid_types = [v.value for v in VendorType]
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid vendor type '{command.vendor_type}'. Please choose from: {', '.join(valid_types)}"
                     )
+
+            try:            
+                # create vendor
+                vendor = Vendor(
+                    firebase_uid=command.firebase_uid,
+                    name=command.name,
+                    vendor_type=command.vendor_type,
+                    description=command.description,
+                    email=command.email,
+                    phone_number=command.phone_number,
+                    address=command.address,
+                    latitude=command.latitude,
+                    longitude=command.longitude,
+                    logo_url=command.logo_url,
+                    has_own_delivery=command.has_own_delivery,
+                    is_active=command.is_active,
+                    fcm_token=command.fcm_token,
+                    opening_time=command.opening_time,
+                    closing_time=command.closing_time,
+                )
+                self.db.add(vendor)
+                self.db.commit() 
+                self.db.refresh(vendor)
                 
-            # create vendor
-            vendor = Vendor(
-                firebase_uid=command.firebase_uid,
-                name=command.name,
-                vendor_type=command.vendor_type,
-                description=command.description,
-                email=command.email,
-                phone_number=command.phone_number,
-                address=command.address,
-                latitude=command.latitude,
-                longitude=command.longitude,
-                logo_url=command.logo_url,
-                has_own_delivery=command.has_own_delivery,
-                is_active=command.is_active,
-                fcm_token=command.fcm_token,
-                opening_time=command.opening_time,
-                closing_time=command.closing_time,
-            )
-            self.db.add(vendor)
-            self.db.commit() 
-            self.db.refresh(vendor)
-            
-            # Automatically create vendor wallet
-            create_vendor_wallet(self.db, vendor.id)
-            
-            return vendor
+                # Automatically create vendor wallet
+                create_vendor_wallet(self.db, vendor.id)
+                
+                return vendor
+            except Exception as e:
+                self.db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                    detail=f"We encountered an error while registering your business. Please try again. If the problem persists, contact support. Error: {str(e)}"
+                )
         
 
 
@@ -298,23 +436,71 @@ class CreateItemHandler:
             self.db = db
 
         def handle(self, command: CreateItemCommand):
+            # Validate required fields
+            if not command.name or not command.name.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Item name is required and cannot be empty"
+                )
+            
+            if command.base_price is None or command.base_price < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Base price is required and must be a positive number"
+                )
+            
+            if command.vendor_id <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Valid vendor ID is required"
+                )
+            
+            if command.category_id and command.category_id <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Invalid category ID. Category ID must be a positive number"
+                )
+            
+            # Verify vendor exists
+            vendor = self.db.query(Vendor).filter(Vendor.id == command.vendor_id).first()
+            if not vendor:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, 
+                    detail=f"Vendor with ID {command.vendor_id} not found. Please verify the vendor exists."
+                )
+            
+            # Verify category exists if provided
+            if command.category_id:
+                category = self.db.query(ItemCategory).filter(ItemCategory.id == command.category_id).first()
+                if not category:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND, 
+                        detail=f"Category with ID {command.category_id} not found. Please select a valid category."
+                    )
 
-            # create item
-            item = Item(
-                name=command.name,
-                base_price=command.base_price,
-                description=command.description,
-                image_url=command.image_url,
-                is_available=command.is_available,
-                allows_addons=command.allows_addons,
-                category_id=command.category_id,
-                vendor_id=command.vendor_id,
-            )
+            try:
+                # create item
+                item = Item(
+                    name=command.name,
+                    base_price=command.base_price,
+                    description=command.description,
+                    image_url=command.image_url,
+                    is_available=command.is_available,
+                    allows_addons=command.allows_addons,
+                    category_id=command.category_id,
+                    vendor_id=command.vendor_id,
+                )
 
-            self.db.add(item)
-            self.db.commit()
-            self.db.refresh(item)
-            return item
+                self.db.add(item)
+                self.db.commit()
+                self.db.refresh(item)
+                return item
+            except Exception as e:
+                self.db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                    detail=f"Failed to create menu item. Please try again. Error: {str(e)}"
+                )
 
 
 

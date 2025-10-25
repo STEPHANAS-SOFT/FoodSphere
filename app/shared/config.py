@@ -1,6 +1,9 @@
 import os
-from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Load environment variables from .env file
+load_dotenv()
 
 class Settings(BaseSettings):
     database_hostname: str
@@ -13,22 +16,15 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int
     api_key: str
 
-
     backend_host: str = "localhost"
     backend_port: str = "8000"
     environment: str = "development"  # "production" or "development"
 
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
-    
-    class Settings(BaseSettings):
-        api_prefix: str = "/api/v1"
-        api_key: str  # will load from .env
-        class Config:
-            env_file = ".env"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False
+    )
 
 
     @property
@@ -37,13 +33,10 @@ class Settings(BaseSettings):
             f"postgresql+psycopg2://{self.database_username}:{self.database_password}@{self.database_hostname}:{self.database_port}/{self.database_name}"
         )
 
-    # api_prefix: str = "/api"
     @property
     def api_prefix(self) -> str:
         # Always just the relative path for FastAPI
         return "/api"
-    
-
 
     @property
     def api_base_url(self) -> str:
