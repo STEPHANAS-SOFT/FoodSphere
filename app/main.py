@@ -46,7 +46,7 @@ app = FastAPI(
     docs_url="/api/docs",
     openapi_url="/openapi.json",
     redoc_url="/api/redoc",
-    root_path="/MetroMart"
+    root_path="/metromart"
 )
 
 
