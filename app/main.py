@@ -40,11 +40,13 @@ configure_mappers()  # Explicitly configure all mappers
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="FoodSphere",
-    description="FoodSphere delivery App",
+    title="MetroMart",
+    description="MetroMart delivery App",
     version="1.0.0",
     docs_url="/api/docs",
+    openapi_url="/openapi.json",
     redoc_url="/api/redoc",
+    root_path="/MetroMart"
 )
 
 
