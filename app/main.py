@@ -66,7 +66,7 @@ app.add_middleware(
 def root():
     """Root endpoint"""
     return {
-        "message": "Hospital Management System API",
+        "message": "MetroMart Food Delivery API",
         "version": "1.0.0",
         "docs": "/api/docs"
     }
