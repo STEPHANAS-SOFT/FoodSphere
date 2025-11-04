@@ -106,7 +106,7 @@ class CreateUserHandler:
 @dataclass(frozen=True)
 class UpdateUserCommand:
     user_id: int
-    firebase_uid: str
+    # firebase_uid: str
     email: EmailStr
     phone_number: str 
     full_name: str 
@@ -143,7 +143,7 @@ class UpdateUserHandler:
 
         try:
             user_query.update({
-                User.firebase_uid: command.firebase_uid,
+                # User.firebase_uid: command.firebase_uid,
                 User.email: command.email,
                 User.phone_number: command.phone_number,
                 User.full_name: command.full_name,

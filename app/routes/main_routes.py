@@ -112,7 +112,7 @@ def delete_user(
 # ==========================
 # UPDATE USER BY ID
 # ==========================
-@user_router.put("/{user_id}", response_model=schemas.UserResponse)
+@user_router.put("/{user_id}", response_model=schemas.UserUpdate)
 def update_user(
     user_id: int,
     user: schemas.UserUpdate,
@@ -121,7 +121,7 @@ def update_user(
 ):
     command = UpdateUserCommand(
         user_id=user_id,
-        firebase_uid=user.firebase_uid,
+        # firebase_uid=user.firebase_uid,
         email=user.email,
         phone_number=user.phone_number,
         full_name=user.full_name,
