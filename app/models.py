@@ -89,7 +89,7 @@ class User(Base):
     # Relationships
     orders = relationship("Order", back_populates="user")
     addresses = relationship("DeliveryAddress", back_populates="user")
-    wallet = relationship("UserWallet", back_populates="user", uselist=False)
+    wallet = relationship("UserWallet", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
 class Vendor(Base):
     """

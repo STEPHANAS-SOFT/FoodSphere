@@ -26,7 +26,8 @@ from ..services.queries import (
     GetAllItemQuery, GetAllItemQueryHandler,
     GetItemByIdQuery, GetItemByIdQueryHandler,
     GetItemByNameQuery, GetItemByNameQueryHandler,
-    GetVendorByNameQuery, GetVendorByNameQueryHandler
+    GetVendorByNameQuery, GetVendorByNameQueryHandler,
+    GetUserByFirebaseUidQuery, GetUserByFirebaseUidQueryHandler
 )
 
 
@@ -91,6 +92,20 @@ def get_user(
     handler = GetUserByIdQueryHandler(db)
     return handler.handle(query)
 
+
+
+# ==========================
+# GET USER BY FIREBASE_UID
+# ==========================
+@user_router.get("firebase/{firebase_uid}", response_model=schemas.UserResponse)
+def get_user_by_firebase_uid(
+    firebase_uid: str,
+    db: Session = Depends(database.get_db),
+    # current_user=Depends(oauth2.role_required(["admin"])),
+):
+    query = GetUserByFirebaseUidQuery(firebase_uid=firebase_uid)
+    handler = GetUserByFirebaseUidQueryHandler(db)
+    return handler.handle(query)
 
 
 

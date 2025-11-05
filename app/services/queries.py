@@ -64,6 +64,39 @@ class GetUserByIdQueryHandler:
     
 
 
+# GET USER BY FIREBASE_UID
+@dataclass(frozen=True)
+class GetUserByFirebaseUidQuery:
+    firebase_uid: str
+
+
+class GetUserByFirebaseUidQueryHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, query: GetUserByFirebaseUidQuery):
+        firebase_user = self.db.query(User).filter(User.firebase_uid == query.firebase_uid).first()
+        if not firebase_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No user found with Firebase UID {query.firebase_uid}. Please verify the Firebase UID is correct."
+            )
+        # return user
+        # if query.user_id <= 0:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST, 
+        #         detail="Invalid user ID. User ID must be a positive number."
+        #     )
+
+        firebase_user = self.db.query(User).filter(User.firebase_uid == query.firebase_uid).first()
+        if not firebase_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"No user found with FIREBASE ID {query.firebase_uid}. Please verify the Firebase ID is correct."
+            )
+        return firebase_user
+
+
 # ==============================================================================================================
 #                                           VENDOR HANDLERS AND QUERIES
 # ==============================================================================================================
