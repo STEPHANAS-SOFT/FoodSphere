@@ -133,6 +133,8 @@ class Vendor(Base):
 
     # Relationships
     items = relationship("Item", back_populates="vendor")
+    categories = relationship("ItemCategory", back_populates="vendor", cascade="all, delete-orphan")
+    addon_groups = relationship("ItemAddonGroup", back_populates="vendor", cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="vendor")
     wallet = relationship("VendorWallet", back_populates="vendor", uselist=False)
 
@@ -142,15 +144,18 @@ class ItemCategory(Base):
     
     Used to organize items in the menu and make navigation easier for users.
     Categories help in filtering and organizing items within a vendor's menu.
+    Each vendor can have their own categories.
     """
     __tablename__ = "item_categories"
 
     id = Column(Integer, primary_key=True, nullable=False)
+    vendor_id = Column(Integer, ForeignKey("vendors.id", ondelete="CASCADE"), nullable=False)
     name = Column(String, nullable=False)      # e.g., "Swallow", "Rice Dishes"
     description = Column(String)               # Optional category description
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
 
     # Relationships
+    vendor = relationship("Vendor", back_populates="categories")
     items = relationship("Item", back_populates="category", cascade="all, delete-orphan")
 
 class Item(Base):
@@ -178,6 +183,7 @@ class Item(Base):
     id = Column(Integer, primary_key=True, nullable=False)
     vendor_id = Column(Integer, ForeignKey("vendors.id", ondelete="CASCADE"), nullable=False)
     category_id = Column(Integer, ForeignKey("item_categories.id"), nullable=False)
+    addon_group_id = Column(Integer, ForeignKey("item_addon_groups.id", ondelete="SET NULL"))  # Reference to addon group
     name = Column(String, nullable=False)
     description = Column(String)
     base_price = Column(Float, nullable=False)  # Base price without add-ons
@@ -190,6 +196,7 @@ class Item(Base):
     # Relationships
     vendor = relationship("Vendor", back_populates="items")
     category = relationship("ItemCategory", back_populates="items")
+    addon_group = relationship("ItemAddonGroup", back_populates="items")
     order_items = relationship("OrderItem", back_populates="item")
     variations = relationship("ItemVariation", back_populates="item")
 
@@ -328,28 +335,30 @@ class Order(Base):
 
 class ItemAddonGroup(Base):
     """
-    Represents a group of related add-ons for an item (e.g., Soups for Semo).
+    Represents a group of related add-ons for items (e.g., Soups, Proteins, Drinks).
     
     This model manages collections of related add-ons and their selection rules:
     - Groups similar add-ons (e.g., all available soups, proteins, or drinks)
     - Controls selection requirements (required/optional)
     - Manages selection limits (minimum and maximum choices)
+    - Can be shared across multiple items within a vendor
+    - Each vendor has their own addon groups
     
     Examples:
-    1. Soups group for Semo:
+    1. Soups group (can be used by Semo, Fufu, etc.):
        - Required selection
        - Min: 1, Max: 1 (must choose exactly one soup)
-    2. Proteins group:
+    2. Proteins group (can be used by multiple items):
        - Optional selection
        - Min: 0, Max: 3 (can choose up to 3 proteins)
-    3. Drinks group:
+    3. Drinks group (shared across all items):
        - Optional selection
        - Min: 0, Max: 1 (can choose one drink)
     """
     __tablename__ = "item_addon_groups"
 
     id = Column(Integer, primary_key=True, nullable=False)
-    item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
+    vendor_id = Column(Integer, ForeignKey("vendors.id", ondelete="CASCADE"), nullable=False)
     name = Column(String, nullable=False)  # e.g., "Soups", "Proteins", "Drinks"
     description = Column(String)
     is_required = Column(Boolean, default=False)  # Whether selection is mandatory
@@ -358,7 +367,9 @@ class ItemAddonGroup(Base):
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
 
     # Relationships
-    addons = relationship("ItemAddon", back_populates="group")
+    vendor = relationship("Vendor", back_populates="addon_groups")
+    items = relationship("Item", back_populates="addon_group")  # Items that use this addon group
+    addons = relationship("ItemAddon", back_populates="group", cascade="all, delete-orphan")
 
 class ItemAddon(Base):
     """

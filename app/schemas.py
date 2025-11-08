@@ -79,6 +79,7 @@ class ItemBase(BaseModel):
     allows_addons: Optional[bool]
     vendor_id: int
     category_id: int
+    addon_group_id: Optional[int] = None
 
 
     class Config:
@@ -98,6 +99,7 @@ class ItemUpdate(BaseModel):
     is_available: Optional[bool]
     allows_addons: Optional[bool]
     category_id: Optional[int]
+    addon_group_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -117,6 +119,7 @@ class ItemResponse(ItemBase):
 # ====================================================
 
 class ItemCategoryBase(BaseModel):
+    vendor_id: int
     name: str
     description: Optional[str] = None
 
@@ -278,7 +281,7 @@ class VendorResponse(VendorBase):
 # ====================================================
 
 class ItemAddonGroupBase(BaseModel):
-    item_id: int
+    vendor_id: int
     name: str
     description: Optional[str] = None
     is_required: Optional[bool] = False

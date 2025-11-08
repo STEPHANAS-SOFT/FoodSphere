@@ -13,7 +13,8 @@ from ..services.commands import (
 from ..services.queries import (
     GetAllItemCategoryQuery, GetAllItemCategoryQueryHandler,
     GetItemCategoryByIdQuery, GetItemCategoryByIdQueryHandler,
-    GetItemCategoryByNameQuery, GetItemCategoryByNameQueryHandler
+    GetItemCategoryByNameQuery, GetItemCategoryByNameQueryHandler,
+    GetItemCategoryByVendorIdQuery, GetItemCategoryByVendorIdQueryHandler
 )
 
 
@@ -36,6 +37,7 @@ def create_item_category(
     db: Session = Depends(database.get_db),
 ):
     command = CreateItemCategoryCommand(
+        vendor_id=category.vendor_id,
         name=category.name,
         description=category.description
     )
@@ -78,6 +80,19 @@ def get_item_category_by_name(
 ):
     query = GetItemCategoryByNameQuery(name=name)
     handler = GetItemCategoryByNameQueryHandler(db)
+    return handler.handle(query)
+
+
+# ==========================
+# GET ITEM CATEGORIES BY VENDOR ID
+# ==========================
+@item_category_router.get("/vendor/{vendor_id}", response_model=List[schemas.ItemCategoryResponse])
+def get_item_categories_by_vendor(
+    vendor_id: int,
+    db: Session = Depends(database.get_db),
+):
+    query = GetItemCategoryByVendorIdQuery(vendor_id=vendor_id)
+    handler = GetItemCategoryByVendorIdQueryHandler(db)
     return handler.handle(query)
 
 

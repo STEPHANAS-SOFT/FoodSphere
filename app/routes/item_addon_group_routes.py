@@ -13,7 +13,8 @@ from ..services.commands import (
 from ..services.queries import (
     GetAllItemAddonGroupQuery, GetAllItemAddonGroupQueryHandler,
     GetItemAddonGroupByIdQuery, GetItemAddonGroupByIdQueryHandler,
-    GetItemAddonGroupByItemIdQuery, GetItemAddonGroupByItemIdQueryHandler
+    GetItemAddonGroupByItemIdQuery, GetItemAddonGroupByItemIdQueryHandler,
+    GetItemAddonGroupByVendorIdQuery, GetItemAddonGroupByVendorIdQueryHandler
 )
 
 
@@ -36,7 +37,7 @@ def create_item_addon_group(
     db: Session = Depends(database.get_db),
 ):
     command = CreateItemAddonGroupCommand(
-        item_id=group.item_id,
+        vendor_id=group.vendor_id,
         name=group.name,
         description=group.description,
         is_required=group.is_required,
@@ -82,6 +83,19 @@ def get_item_addon_groups_by_item(
 ):
     query = GetItemAddonGroupByItemIdQuery(item_id=item_id)
     handler = GetItemAddonGroupByItemIdQueryHandler(db)
+    return handler.handle(query)
+
+
+# ==========================
+# GET ITEM ADDON GROUPS BY VENDOR ID
+# ==========================
+@item_addon_group_router.get("/vendor/{vendor_id}", response_model=List[schemas.ItemAddonGroupResponse])
+def get_item_addon_groups_by_vendor(
+    vendor_id: int,
+    db: Session = Depends(database.get_db),
+):
+    query = GetItemAddonGroupByVendorIdQuery(vendor_id=vendor_id)
+    handler = GetItemAddonGroupByVendorIdQueryHandler(db)
     return handler.handle(query)
 
 

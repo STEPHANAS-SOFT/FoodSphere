@@ -85,7 +85,7 @@ def get_items_with_details(
     db: Session = Depends(get_db)
 ):
     """Get items with detailed information including vendor and category names"""
-    items_query = """
+    items_query = f"""
     SELECT 
         i.id, i.name, i.description, i.price, i.is_available, 
         i.vendor_id, v.name as vendor_name,
@@ -98,7 +98,7 @@ def get_items_with_details(
     LEFT JOIN vendors v ON i.vendor_id = v.id
     LEFT JOIN item_categories ic ON i.category_id = ic.id
     LEFT JOIN item_variations iv ON i.id = iv.item_id
-    LEFT JOIN item_addon_groups iag ON i.id = iag.item_id
+    LEFT JOIN item_addon_groups iag ON i.addon_group_id = iag.id
     LEFT JOIN item_addons ia ON iag.id = ia.group_id
     GROUP BY i.id, v.name, ic.name
     ORDER BY i.created_at DESC

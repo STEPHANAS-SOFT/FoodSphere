@@ -428,6 +428,7 @@ class CreateItemCommand:
     image_url: Optional[str] = None
     is_available: Optional[bool] = True
     allows_addons: Optional[bool] = False
+    addon_group_id: Optional[int] = None
     
 
 
@@ -477,6 +478,15 @@ class CreateItemHandler:
                         status_code=status.HTTP_404_NOT_FOUND, 
                         detail=f"Category with ID {command.category_id} not found. Please select a valid category."
                     )
+            
+            # Verify addon group exists if provided
+            if command.addon_group_id:
+                addon_group = self.db.query(ItemAddonGroup).filter(ItemAddonGroup.id == command.addon_group_id).first()
+                if not addon_group:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND, 
+                        detail=f"Addon group with ID {command.addon_group_id} not found. Please select a valid addon group."
+                    )
 
             try:
                 # create item
@@ -489,6 +499,7 @@ class CreateItemHandler:
                     allows_addons=command.allows_addons,
                     category_id=command.category_id,
                     vendor_id=command.vendor_id,
+                    addon_group_id=command.addon_group_id,
                 )
 
                 self.db.add(item)
@@ -519,6 +530,7 @@ class UpdateItemCommand:
     image_url: Optional[str] = None
     is_available: Optional[bool] = None
     allows_addons: Optional[bool] = None
+    addon_group_id: Optional[int] = None
 
 
 class UpdateItemHandler:
@@ -546,6 +558,8 @@ class UpdateItemHandler:
             update_data[Item.is_available] = command.is_available
         if command.allows_addons is not None:
             update_data[Item.allows_addons] = command.allows_addons
+        if command.addon_group_id is not None:
+            update_data[Item.addon_group_id] = command.addon_group_id
         
         item_query.update(update_data)
         self.db.commit()
@@ -582,6 +596,7 @@ class DeleteItemHandler:
 
 @dataclass
 class CreateItemCategoryCommand:
+    vendor_id: int
     name: str
     description: Optional[str] = None
 
@@ -590,7 +605,16 @@ class CreateItemCategoryHandler:
         self.db = db
 
     def handle(self, command: CreateItemCategoryCommand):
+        # Verify vendor exists
+        vendor = self.db.query(Vendor).filter(Vendor.id == command.vendor_id).first()
+        if not vendor:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"Vendor with ID {command.vendor_id} not found. Please verify the vendor exists."
+            )
+        
         category = ItemCategory(
+            vendor_id=command.vendor_id,
             name=command.name,
             description=command.description
         )
@@ -851,7 +875,7 @@ class DeleteRiderHandler:
 
 @dataclass
 class CreateItemAddonGroupCommand:
-    item_id: int
+    vendor_id: int
     name: str
     description: Optional[str] = None
     is_required: Optional[bool] = False
@@ -863,8 +887,16 @@ class CreateItemAddonGroupHandler:
         self.db = db
 
     def handle(self, command: CreateItemAddonGroupCommand):
+        # Verify vendor exists
+        vendor = self.db.query(Vendor).filter(Vendor.id == command.vendor_id).first()
+        if not vendor:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"Vendor with ID {command.vendor_id} not found. Please verify the vendor exists."
+            )
+        
         addon_group = ItemAddonGroup(
-            item_id=command.item_id,
+            vendor_id=command.vendor_id,
             name=command.name,
             description=command.description,
             is_required=command.is_required,

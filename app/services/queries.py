@@ -321,6 +321,26 @@ class GetItemCategoryByNameQueryHandler:
             )
         return category_list
 
+@dataclass(frozen=True)
+class GetItemCategoryByVendorIdQuery:
+    vendor_id: int
+
+class GetItemCategoryByVendorIdQueryHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, query: GetItemCategoryByVendorIdQuery):
+        # Validate vendor ID
+        if query.vendor_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid vendor ID. Vendor ID must be a positive number."
+            )
+        
+        categories = self.db.query(ItemCategory).filter(ItemCategory.vendor_id == query.vendor_id).all()
+        # Return empty list if no categories found - vendor may not have categories yet
+        return categories
+
 
 # ==============================================================================================================
 #                                           DELIVERY ADDRESS HANDLERS AND QUERIES
@@ -474,9 +494,38 @@ class GetItemAddonGroupByItemIdQueryHandler:
                 detail="Invalid item ID. Item ID must be a positive number."
             )
         
-        groups = self.db.query(ItemAddonGroup).filter(ItemAddonGroup.item_id == query.item_id).all()
-        # Return empty list if no addon groups found - item may not have addon groups
-        return groups
+        # Since Item now references ItemAddonGroup, we need to query items first
+        item = self.db.query(Item).filter(Item.id == query.item_id).first()
+        if not item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail=f"Item with ID {query.item_id} not found."
+            )
+        
+        # Return the addon_group if it exists, as a list for backward compatibility
+        if item.addon_group_id and item.addon_group:
+            return [item.addon_group]
+        return []
+
+@dataclass(frozen=True)
+class GetItemAddonGroupByVendorIdQuery:
+    vendor_id: int
+
+class GetItemAddonGroupByVendorIdQueryHandler:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def handle(self, query: GetItemAddonGroupByVendorIdQuery):
+        # Validate vendor ID
+        if query.vendor_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid vendor ID. Vendor ID must be a positive number."
+            )
+        
+        addon_groups = self.db.query(ItemAddonGroup).filter(ItemAddonGroup.vendor_id == query.vendor_id).all()
+        # Return empty list if no addon groups found - vendor may not have addon groups yet
+        return addon_groups
 
 
 # ==============================================================================================================
